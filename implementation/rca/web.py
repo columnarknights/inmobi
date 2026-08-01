@@ -15,13 +15,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from . import baseline, pipeline
+from . import baseline, latency, pipeline
 from .config import settings
 from .db import get_client
 from .metrics import DIMENSIONS, METRICS
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "out"
+TRACE_DIR = ROOT / "traces"
 WEBAPP_DIR = Path(__file__).resolve().parent / "webapp"
 
 app = FastAPI(title="InMobi RCA Dashboard")
@@ -137,6 +138,14 @@ def get_incident(incident_id: str):
         raise HTTPException(404, "Not found")
     with open(path) as f:
         return json.load(f)
+
+
+@app.get("/api/latency")
+def latency_report():
+    """p50/p90/p95/p99 for the investigate/scan pipeline, computed from the
+    Tracer spans already written for every real run (traces/*.json) —
+    measured from actual runs, not a synthetic benchmark."""
+    return latency.compute_report(TRACE_DIR)
 
 
 app.mount("/", StaticFiles(directory=str(WEBAPP_DIR), html=True), name="webapp")

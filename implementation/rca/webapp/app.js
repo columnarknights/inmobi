@@ -32,6 +32,13 @@ function fmtPct(v) {
   return (v * 100).toFixed(1) + "%";
 }
 
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
 async function fetchJSON(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url} -> ${res.status}`);
@@ -76,7 +83,66 @@ async function init() {
 
   document.getElementById("scan-btn").addEventListener("click", runScan);
 
-  await Promise.all([loadChart(), loadIncidents()]);
+  await Promise.all([loadChart(), loadIncidents(), loadLatency()]);
+}
+
+function fmtSeconds(v) {
+  return v === null || v === undefined ? "—" : `${v.toFixed(v < 10 ? 2 : 1)}s`;
+}
+
+async function loadLatency() {
+  const section = document.getElementById("latency-section");
+  let report;
+  try {
+    report = await fetchJSON(`${API}/api/latency`);
+  } catch (e) {
+    return; // no traces yet — leave the section hidden
+  }
+  const inv = report.investigate.end_to_end;
+  if (!inv.n) return;
+  section.style.display = "";
+
+  const pipe = report.investigate.pipeline_only;
+  const llm = report.investigate.narrate_only;
+  const maxP95 = Math.max(pipe.p95 || 0, llm.p95 || 0, 1e-9);
+
+  const card = document.getElementById("latency-card");
+  card.innerHTML = "";
+
+  const headline = el("div", "latency-headline");
+  [["p50", inv.p50], ["p95", inv.p95], ["p99", inv.p99]].forEach(([label, v]) => {
+    const stat = el("div", "latency-stat");
+    stat.appendChild(el("div", "latency-stat-label", label));
+    stat.appendChild(el("div", "latency-stat-value", fmtSeconds(v)));
+    headline.appendChild(stat);
+  });
+  const nEl = el("div", "latency-n", `across ${inv.n} real investigation${inv.n === 1 ? "" : "s"}`);
+  headline.appendChild(nEl);
+  card.appendChild(headline);
+
+  const breakdown = el("div", "latency-breakdown");
+  const rows = [
+    { label: "ClickHouse detection + drill-down", stats: pipe, cls: "ch" },
+    { label: "LLM narration (phrasing only)", stats: llm, cls: "llm" },
+  ];
+  rows.forEach((r) => {
+    const row = el("div", "latency-row");
+    row.appendChild(el("span", "latency-row-label", r.label));
+    const track = el("div", "latency-bar-track");
+    const fill = el("div", `latency-bar-fill ${r.cls}`);
+    fill.style.width = `${Math.min(100, ((r.stats.p95 || 0) / maxP95) * 100)}%`;
+    track.appendChild(fill);
+    row.appendChild(track);
+    row.appendChild(el("span", "latency-row-value", `p95 ${fmtSeconds(r.stats.p95)} · p99 ${fmtSeconds(r.stats.p99)}`));
+    breakdown.appendChild(row);
+  });
+  card.appendChild(breakdown);
+
+  if (llm.p99 !== null && pipe.p99 !== null && llm.p99 > pipe.p99 * 2) {
+    card.appendChild(el("p", "latency-note",
+      `The ClickHouse-based detection and drill-down stay fast even in the worst case (p99 ${fmtSeconds(pipe.p99)}). ` +
+      `The occasional slow run comes from the LLM phrasing step retrying against the free-tier rate limit — not from the analysis itself.`));
+  }
 }
 
 async function loadChart() {

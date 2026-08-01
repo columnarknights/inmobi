@@ -293,6 +293,24 @@ table.seg-table tr.ruled-out td { color: var(--text-muted); }
 
 .loading { color: var(--text-muted); font-size: 13px; }
 
+.latency-card {
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+  padding: 18px 20px; box-shadow: var(--card-shadow);
+}
+.latency-headline { display: flex; align-items: baseline; gap: 28px; flex-wrap: wrap; margin-bottom: 18px; }
+.latency-stat-label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 2px; }
+.latency-stat-value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.latency-n { color: var(--text-muted); font-size: 12px; margin-left: auto; align-self: flex-end; }
+.latency-breakdown { display: flex; flex-direction: column; gap: 10px; }
+.latency-row { display: grid; grid-template-columns: 220px 1fr 150px; align-items: center; gap: 12px; font-size: 13px; }
+.latency-row-label { color: var(--text-secondary); }
+.latency-bar-track { height: 8px; border-radius: 4px; background: var(--gridline); overflow: hidden; }
+.latency-bar-fill { height: 100%; border-radius: 4px; }
+.latency-bar-fill.ch { background: var(--series-1); }
+.latency-bar-fill.llm { background: var(--series-2); }
+.latency-row-value { color: var(--text-secondary); font-variant-numeric: tabular-nums; text-align: right; }
+.latency-note { font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--gridline); }
+
 .toast-container {
   position: fixed; bottom: 22px; right: 22px; display: flex; flex-direction: column;
   gap: 8px; z-index: 100; max-width: 340px;

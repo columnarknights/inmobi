@@ -46,6 +46,12 @@
       <p class="section-hint">Detected anomalies, most recent first — click one for the full root-cause breakdown.</p>
       <div class="incident-list" id="incident-list"><div class="loading">Loading…</div></div>
     </section>
+
+    <section id="latency-section" style="display:none;">
+      <h2>Investigation latency</h2>
+      <p class="section-hint">Measured from every real run's own trace, not a synthetic benchmark — "seconds, not days."</p>
+      <div class="latency-card" id="latency-card"></div>
+    </section>
   </div>
   <div class="toast-container" id="toast-container"></div>
   <script src="app.js"></script>
