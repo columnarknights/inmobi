@@ -9,8 +9,9 @@ existing observation data, so p50/p95/p99 latency is visible directly in the
 Langfuse UI instead of only in `rca latency-report` or the dashboard's own
 "Investigation latency" section.
 
-Idempotent: re-running skips widgets/the dashboard if one with the same name
-already exists.
+Idempotent: re-running syncs widgets/the dashboard to match WIDGETS below
+(matched by name) rather than duplicating them, and removes any placement
+left over from a widget that's since been renamed or dropped from the list.
 
 Usage: python3 scripts/setup_langfuse_latency_dashboard.py
 """
@@ -56,11 +57,11 @@ WIDGETS = [
         chart_type=DashboardWidgetChartType.HORIZONTAL_BAR,
     ),
     dict(
-        name="ClickHouse pipeline stages — p95 latency (ms)",
+        name="ClickHouse pipeline stages — p95/p99 latency (ms)",
         description="window_aggregate (baseline+current), decompose_revenue: the deterministic query stages "
         "that do the actual root-cause analysis, no LLM involved.",
         dimensions=[DashboardWidgetDimension(field="name")],
-        metrics=[DashboardWidgetMetric(measure="latency", agg="p95")],
+        metrics=[DashboardWidgetMetric(measure="latency", agg=agg) for agg in ("p95", "p99")],
         filters=[DashboardWidgetFilter(
             column="name", operator="any of",
             value=["window_aggregate[baseline]", "window_aggregate[current]", "decompose_revenue"],
@@ -69,18 +70,19 @@ WIDGETS = [
         chart_type=DashboardWidgetChartType.HORIZONTAL_BAR,
     ),
     dict(
-        name="Drill-down latency by factor — p95 (ms)",
+        name="Drill-down latency by factor — p95/p99 (ms)",
         description="drill_down[<factor>] spans, grouped by which factor was being drilled into.",
         dimensions=[DashboardWidgetDimension(field="name")],
-        metrics=[DashboardWidgetMetric(measure="latency", agg="p95")],
+        metrics=[DashboardWidgetMetric(measure="latency", agg=agg) for agg in ("p95", "p99")],
         filters=[DashboardWidgetFilter(column="name", operator="contains", value="drill_down", type="string")],
         chart_type=DashboardWidgetChartType.HORIZONTAL_BAR,
     ),
     dict(
-        name="Investigation latency trend — p95 (ms)",
-        description="p95 end-to-end investigate latency over time, so a live demo can show it staying stable.",
+        name="Investigation latency trend — p95/p99 (ms)",
+        description="p95 and p99 end-to-end investigate latency over time, so a live demo can show both "
+        "staying stable (or show exactly when a rate-limit-driven p99 spike happened).",
         dimensions=[],
-        metrics=[DashboardWidgetMetric(measure="latency", agg="p95")],
+        metrics=[DashboardWidgetMetric(measure="latency", agg=agg) for agg in ("p95", "p99")],
         filters=[DashboardWidgetFilter(column="name", operator="=", value="investigate", type="string")],
         chart_type=DashboardWidgetChartType.LINE_TIME_SERIES,
     ),
@@ -98,17 +100,18 @@ def main() -> None:
         host=settings.langfuse_host,
     )
 
-    existing_widgets = {w.name: w for w in lf.api.unstable.dashboard_widgets.list(limit=100).data}
+    existing_widgets_by_name = {w.name: w for w in lf.api.unstable.dashboard_widgets.list(limit=100).data}
+    wanted_names = {spec["name"] for spec in WIDGETS}
     widget_ids = []
     for spec in WIDGETS:
         spec = dict(spec)
-        if spec["name"] in existing_widgets:
-            print(f"  Widget already exists, reusing: {spec['name']}")
-            widget_ids.append(existing_widgets[spec["name"]].id)
-            continue
-        kwargs = dict(view=DashboardWidgetView.OBSERVATIONS, **spec)
-        w = lf.api.unstable.dashboard_widgets.create(**kwargs)
-        print(f"  Created widget: {w.name} (id={w.id})")
+        if spec["name"] in existing_widgets_by_name:
+            w = lf.api.unstable.dashboard_widgets.update(widget_id=existing_widgets_by_name[spec["name"]].id, **spec)
+            print(f"  Synced widget: {w.name} (id={w.id})")
+        else:
+            kwargs = dict(view=DashboardWidgetView.OBSERVATIONS, **spec)
+            w = lf.api.unstable.dashboard_widgets.create(**kwargs)
+            print(f"  Created widget: {w.name} (id={w.id})")
         widget_ids.append(w.id)
 
     existing_dashboards = {d.name: d for d in lf.api.unstable.dashboards.list(limit=100).data}
@@ -124,9 +127,22 @@ def main() -> None:
         print(f"Created dashboard: {dash.name} (id={dash.id})")
 
     dash = lf.api.unstable.dashboards.get(dashboard_id=dash.id)
-    placed_widget_ids = {
-        p.widget_id for p in dash.definition.widgets if getattr(p, "widget_id", None)
-    }
+    placements = [p for p in dash.definition.widgets if getattr(p, "widget_id", None)]
+    placed_widget_ids = {p.widget_id for p in placements}
+
+    # Remove placements left over from a since-renamed widget (e.g. the old
+    # "... p95 latency" widgets, superseded by the "... p95/p99" ones above),
+    # and delete the now-orphaned widget itself. Scoped to only widgets this
+    # dashboard is actually placing, never anything else in the project.
+    existing_widgets_by_id = {w.id: w for w in existing_widgets_by_name.values()}
+    for p in placements:
+        w = existing_widgets_by_id.get(p.widget_id)
+        if w is not None and w.name not in wanted_names:
+            lf.api.unstable.dashboards.delete_placement(dashboard_id=dash.id, placement_id=p.id)
+            lf.api.unstable.dashboard_widgets.delete(widget_id=w.id)
+            print(f"  Removed superseded widget: {w.name}")
+            placed_widget_ids.discard(w.id)
+
     x, y = 0, 0
     for wid in widget_ids:
         if wid in placed_widget_ids:
