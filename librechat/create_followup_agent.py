@@ -26,6 +26,7 @@ LIBRECHAT_FOLLOWUP_AGENT_ID so the dashboard can build the deep-link URL.
 import os
 import re
 import sys
+from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
@@ -82,74 +83,90 @@ def create_followup_agent() -> str:
         page = ctx.new_page()
         page.on("request", on_request)
 
-        _login_or_register(page)
+        try:
+            _login_or_register(page)
 
-        page.click('[aria-label="Agent Builder"]')
-        page.wait_for_timeout(1000)
-        page.fill('input[placeholder="Agent name"]', AGENT_NAME)
-        page.fill('input[placeholder="What this agent does"]', AGENT_DESCRIPTION)
-        page.fill("textarea", AGENT_INSTRUCTIONS)
+            page.click('[aria-label="Agent Builder"]')
+            page.wait_for_timeout(1000)
+            page.fill('input[placeholder="Agent name"]', AGENT_NAME)
+            page.fill('input[placeholder="What this agent does"]', AGENT_DESCRIPTION)
+            page.fill("textarea", AGENT_INSTRUCTIONS)
 
-        # Model: Google -> gemini-flash-lite-latest (native endpoint — required
-        # for MCP tool calls; the OpenAI-compat "Gemini" endpoint 400s on them).
-        page.locator("text=Select a model").first.click()
-        page.wait_for_timeout(400)
-        page.click("text=Select a provider")
-        page.wait_for_timeout(400)
-        page.click("text=Google")
-        page.wait_for_timeout(400)
-        page.click("text=Model Parameters >> xpath=preceding-sibling::button | ./preceding::button[1]")
-        page.wait_for_timeout(500)
+            # Model: Google -> gemini-flash-lite-latest (native endpoint — required
+            # for MCP tool calls; the OpenAI-compat "Gemini" endpoint 400s on them).
+            page.locator("text=Select a model").first.click()
+            page.wait_for_timeout(400)
+            page.click("text=Select a provider")
+            page.wait_for_timeout(400)
+            page.click("text=Google")
+            page.wait_for_timeout(400)
+            page.click("text=Model Parameters >> xpath=preceding-sibling::button | ./preceding::button[1]")
+            page.wait_for_timeout(500)
 
-        # Tools: open rca-investigator's tool picker and select only the two
-        # scoped tools (not the whole collection, not the clickhouse server).
-        # Clicking the card itself toggles-select the WHOLE collection (all 6
-        # tools) — the per-tool picker only opens via the "Configure" (gear)
-        # button that fades in on hover, bottom-right of the card.
-        page.click("text=TOOLS >> xpath=following::button[1]")
-        page.wait_for_timeout(800)
-        card = page.get_by_role("button", name="rca-investigator MCP servers")
-        card.hover()
-        page.wait_for_timeout(300)
-        card.locator("xpath=..").get_by_label("Configure").click(force=True)
-        page.wait_for_timeout(800)
-        dialog = page.get_by_role("dialog")
-        dialog.get_by_text("get_investigation", exact=True).click()
-        page.wait_for_timeout(300)
-        dialog.get_by_text("drill_deeper", exact=True).click()
-        page.wait_for_timeout(300)
-        dialog.locator("svg").last.click(force=True)  # close tool-detail dialog
-        page.wait_for_timeout(500)
-        # Close the Tool Library panel via its own X (top right, the larger
-        # of the two lucide "x" icons on the page at this point — the other
-        # is the unrelated sidebar-collapse icon).
-        page.locator("svg.lucide-x").nth(1).click(force=True)
-        page.wait_for_timeout(500)
+            # Tools: open rca-investigator's tool picker and select only the two
+            # scoped tools (not the whole collection, not the clickhouse server).
+            # Clicking the card itself toggles-select the WHOLE collection (all 6
+            # tools) — the per-tool picker only opens via the "Configure" (gear)
+            # button that fades in on hover, bottom-right of the card.
+            page.click("text=TOOLS >> xpath=following::button[1]")
+            page.wait_for_timeout(800)
+            card = page.get_by_role("button", name="rca-investigator MCP servers")
+            card.hover()
+            page.wait_for_timeout(300)
+            card.locator("xpath=..").get_by_label("Configure").click(force=True)
+            page.wait_for_timeout(800)
+            dialog = page.get_by_role("dialog")
+            dialog.get_by_text("get_investigation", exact=True).click()
+            page.wait_for_timeout(300)
+            dialog.get_by_text("drill_deeper", exact=True).click()
+            page.wait_for_timeout(300)
+            dialog.locator("svg").last.click(force=True)  # close tool-detail dialog
+            page.wait_for_timeout(500)
+            # Close the Tool Library panel via its own X (top right, the larger
+            # of the two lucide "x" icons on the page at this point — the other
+            # is the unrelated sidebar-collapse icon).
+            page.locator("svg.lucide-x").nth(1).click(force=True)
+            page.wait_for_timeout(500)
 
-        page.locator('button:has-text("Create")').last.click()
-        page.wait_for_timeout(2500)
+            page.locator('button:has-text("Create")').last.click()
+            page.wait_for_timeout(2500)
 
-        if not created.get("seen_create"):
-            raise RuntimeError("Never saw the agent-creation request fire — UI flow may have changed.")
+            if not created.get("seen_create"):
+                raise RuntimeError("Never saw the agent-creation request fire — UI flow may have changed.")
 
-        # Read back the id via the app's own (authenticated) fetch, by opening
-        # the agent picker and capturing the list response.
-        agent_id_holder = {}
+            # Read back the id via the app's own (authenticated) fetch, by opening
+            # the agent picker and capturing the list response.
+            agent_id_holder = {}
 
-        def on_response(response):
-            if re.search(r"/api/agents\?", response.url):
-                try:
-                    data = response.json()
-                    for a in data.get("data", []):
-                        if a["name"] == AGENT_NAME:
-                            agent_id_holder["id"] = a["id"]
-                except Exception:
-                    pass
+            def on_response(response):
+                if re.search(r"/api/agents\?", response.url):
+                    try:
+                        data = response.json()
+                        for a in data.get("data", []):
+                            if a["name"] == AGENT_NAME:
+                                agent_id_holder["id"] = a["id"]
+                    except Exception:
+                        pass
 
-        page.on("response", on_response)
-        page.click(f"text={AGENT_NAME}")
-        page.wait_for_timeout(1200)
-        browser.close()
+            page.on("response", on_response)
+            page.click(f"text={AGENT_NAME}")
+            page.wait_for_timeout(1200)
+        except Exception:
+            # This drives a UI with no stable API contract, so a selector can
+            # break on any LibreChat update -- capture exactly what the page
+            # looked like at the moment of failure instead of leaving whoever
+            # hits this to debug a bare Playwright stack trace blind.
+            debug_dir = Path(__file__).resolve().parent / ".debug"
+            debug_dir.mkdir(exist_ok=True)
+            try:
+                page.screenshot(path=str(debug_dir / "create_followup_agent_failure.png"), full_page=True)
+                (debug_dir / "create_followup_agent_failure.html").write_text(page.content())
+                print(f"Saved failure screenshot + HTML to {debug_dir}/", file=sys.stderr)
+            except Exception:
+                pass  # the page itself may be gone/crashed; don't mask the real error with this
+            raise
+        finally:
+            browser.close()
 
     if "id" not in agent_id_holder:
         raise RuntimeError("Agent created but could not read back its id — check LibreChat manually.")

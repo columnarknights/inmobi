@@ -15,6 +15,7 @@ librechat/data-node/
 librechat/images/
 librechat/uploads/
 librechat/logs/
+librechat/.debug/
 
 # Regenerable synthetic test dataset (implementation/scripts/generate_test_dataset.py,
 # fixed random seed) -- large binary, not worth versioning.
