@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from . import baseline, latency, pipeline
+from . import attribution, baseline, latency, pipeline
 from .config import settings
 from .db import get_client
 from .metrics import DIMENSIONS, METRICS
@@ -169,21 +169,8 @@ def _derive_fields(data: dict) -> dict:
     decomp = data.get("decomposition") or {}
     baseline_factors = decomp.get("baseline_factors") or {}
     current_factors = decomp.get("current_factors") or {}
-    factor_rel_deltas = decomp.get("factor_rel_deltas") or {}
 
-    # The metric's own relative move, whichever metric was actually under
-    # investigation -- revenue_rel_delta only reflects the revenue anomaly
-    # itself, which understates (or misses) the move for a ctr/fill_rate/etc.
-    # incident where revenue barely changed. factor_rel_deltas only covers the
-    # 4 revenue factors, so ctr needs the direct baseline/current computation.
-    if metric == "revenue":
-        metric_rel_delta = decomp.get("revenue_rel_delta")
-    elif metric in factor_rel_deltas:
-        metric_rel_delta = factor_rel_deltas[metric]
-    else:
-        b, c = baseline_factors.get(metric), current_factors.get(metric)
-        metric_rel_delta = (c - b) / b if b else None
-
+    metric_rel_delta = attribution.metric_rel_delta(metric, decomp)
     chain = _segment_chain(data.get("drill_down"))
     return {
         "metric_rel_delta": metric_rel_delta,
