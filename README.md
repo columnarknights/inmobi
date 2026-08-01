@@ -1,127 +1,151 @@
-# Automated Root-Cause Analyst — InMobi Click-a-thon 2026
+<h1>LiveDumpDetective</h1>
 
-Detects when a key ad-metric (revenue, fill rate, eCPM, requests, CTR) deviates
-from its expected baseline, automatically drills down to the specific
-segment(s) responsible, and writes a short plain-language diagnosis where
-every number is real and reproducible from ClickHouse.
+---
 
-ClickHouse does all the analysis (baseline comparison, revenue-identity
-decomposition, per-segment ranking). An LLM (Gemini) only narrates the
-already-computed numbers. Every step — every SQL query and the final LLM
-call — is captured in a trace (local JSON + Langfuse), so a judge can see
-exactly what was checked, in what order, and why.
+**Contents**:
 
-## How it works
+- [The Event Stream](#the-event-stream)
+- [The Metrics Stream](#the-metrics-stream)
+- [Alerting - Prerequisite, Not Problem Statement](#alerting---prerequisite-not-problem-statement)
+- [Problem Statement](#problem-statement)
+- [Key Concepts](#key-concepts)
+  - [Metric Dimensions](#metric-dimensions)
+  - [Advertisement Cost Models](#advertisement-cost-models)
+- [Demo Solution Approach](#demo-solution-approach)
+  - [Overall Approach](#overall-approach)
+  - [Build the Event/Metric Streams](#build-the-eventmetric-streams)
+  - [Investigation](#investigation)
 
-1. **Detect** (`sql` via `src/rca/baseline.py`): for each day and each metric,
-   compare against a *like-for-like* baseline — the same weekday, trailing
-   weeks — instead of a flat global average (which would flag every weekend
-   as anomalous). A robust (median/MAD) z-score plus a minimum relative-move
-   floor avoids crying wolf on noise. A linear trend fit over the trailing
-   points nets out the slow growth trend the data has, so being later in the
-   dataset doesn't itself look anomalous. A two-pass contamination guard
-   keeps one real one-day incident from poisoning the trend baseline of a
-   later, otherwise-normal day.
+---
 
-2. **Decompose** (`src/rca/attribution.py::decompose_revenue`): walks the
-   revenue identity `revenue = requests × fill_rate × render_rate × eCPM/1000`
-   using an exact logarithmic-mean (LMDI) decomposition — the factor
-   contributions sum exactly to the observed revenue delta, so "which factor
-   moved" is never a guess.
+# The Event Stream
+A digital add stack (InMobi) provides a stream of events (see: [`data/ad_events.parquet`](./data/ad_events.parquet)).
 
-3. **Drill down** (`src/rca/attribution.py::drill_down`): for the responsible
-   factor, ranks every segment of every dimension (ad_format, category,
-   publisher_tier, vertical, campaign_type, region, country, device_model,
-   os_version) by **explanatory power** (Adtributor's formula — the share of
-   the movement this segment accounts for, after removing the change a pure
-   volume/mix shift at the baseline rate would predict). A segment is only
-   declared the localized cause if its **lift** (explanatory power ÷ its own
-   volume share) clears a threshold — a segment whose EP simply equals its
-   size moved in exact proportion to everything else, which is evidence of a
-   *broad* effect, not a localized one, and is reported as such instead of
-   being forced into a story. Recurses one level deeper into the winning
-   segment (e.g. device → device × region).
+Each event consisting of the following columns:
 
-4. **Narrate** (`src/rca/narrate.py`): the only LLM call. It receives nothing
-   but the structured JSON of computed numbers and is instructed to cite only
-   what's in that JSON, name the ruled-out segments, and say plainly when
-   nothing localizes.
+- `event_time`
+- `app_id` (ID of app associated with the event)
+    > Foreign key from [`data/apps.csv`](./data/apps.csv)
+- `geo_device_id` (ID of device associated with the event)
+    > Foreign key from [`data/geo_device.csv`](./data/geo_device.csv)
+- `advertiser_id` (ID of the advertiser associated with the event)
+    > Foreign key from [`data/advertisers.csv`](./data/advertisers.csv)
+- `ad_format`:
+  - `native`
+  - `video`
+  - `banner`
+  - `interstitial`
+  - `rewarded`
+- `is_filled` (indicator for whether ad request is filled)
+- `is_impression` (indicator for whether ad is rendered)
+- `is_click` (indicator for whether ad is clicked on)
+- `revenue` (revenue received by InMobi as per some cost model)
 
-5. **Trace** (`src/rca/tracing.py`): every stage above runs inside a span.
-   Spans are always written to `traces/*.json` locally; if Langfuse
-   credentials are set they're mirrored live to Langfuse as well, nested
-   exactly as they nest in code.
+> **NOTE**: The dataset [`data/ad_events.parquet`](./data/ad_events.parquet) is a synthetic ad-events dataset capturing ~9 million events over 5 weeks, along with dimensions: impressions, requests, fills, clicks, and revenue events across dimensions (app, device, OS, geo, advertiser, ad format), with realistic seasonality and noise.
 
-## Setup
+# The Metrics Stream
+Key metrics must be calculated from the event stream and monitored for deviations/anomalies. [`docs/metrics_glossary.md`](./docs/metrics_glossary.md) provides an overview about the metrics used and how they are calculated. The columns `is_filled`, `is_impression`, `is_click`, and `revenue` in the event stream serve as the raw data from which metrics are calculated.
 
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
-cp .env.example .env   # fill in ClickHouse Cloud + Gemini + Langfuse creds
-bash scripts/load_data.sh   # idempotent: drops + recreates + reloads everything
-```
+# Alerting - Prerequisite, Not Problem Statement
+We must set up alerts per metric, based on:
 
-`scripts/load_data.sh` applies `sql/ddl.sql`, bulk-loads the three dimension
-CSVs and `ad_events.parquet` via `clickhouse-client`, then runs
-`sql/build_fact.sql` to build `fact_events` — a single denormalized table
-(fact + all three dimensions pre-joined) so every drill-down query below is a
-plain single-table `GROUP BY`, no joins at query time.
+- Defined threshold values
+- Calculated running averages
+- Calculated deviations
 
-To point at a fresh dataset (e.g. the unseen-incident release), just replace
-the files under `data/` and rerun the same script — nothing else changes.
+> **NOTE**: This is an in-development list, not a definitive.
 
-## Usage
+The key problem statement:
 
-```bash
-# Detect-only: which days, for which metrics, look anomalous (no drill-down)
-rca scan
-rca scan --metric revenue --metric fill_rate --lookback-weeks 4
+- Not **what** has deviated/changed enough to notice/investigate
+- But the actual investigation itself
 
-# Full investigation of one specific window: decompose + drill-down + narrate
-rca investigate --metric fill_rate --start 2026-06-23 --end 2026-06-25
+# Problem Statement
+> **Reference**: [`InMobi/PROBLEM_STATEMENT.md`, **github.com**](https://github.com/sidagarwal04/click-a-thon-2026/blob/main/InMobi/PROBLEM_STATEMENT.md)
 
-# End to end: scan the whole loaded range, investigate + narrate every incident found
-rca auto
-```
+- Auto-investigation of why a metric moved
+    > The definition of "moved" may be threshold-based.
+- Returns a short, evidence-backed explanation in seconds, not days <br> =>
+  - Clear breakdown of [metric dimensions](#metric-dimensions) (part of "evidence-backed")
+  - Reasoning from the above breakdown (part of "evidence-backed")
+  - Low latency ("seconds, not days")
 
-`rca auto` (and `investigate`) write each result as JSON to `out/` and print
-the local trace path (and the Langfuse trace URL, if configured). `rca auto`
-with no arguments scans the full date range currently loaded in
-`fact_events` — this is what to run against the unseen-incident dataset once
-it's loaded, with no code changes.
+Essentially, this is automatic root-cause analysis for real-time metric deviations.
 
-## Project layout
+**Bonus**:
 
-```
-sql/ddl.sql            table definitions (raw + denormalized fact_events)
-sql/build_fact.sql      one-time join that builds fact_events
-scripts/load_data.sh    idempotent full data load (Cloud or local)
-src/rca/metrics.py      metric + dimension definitions (matches metrics_glossary.md exactly)
-src/rca/baseline.py     like-for-like baseline + anomaly detection
-src/rca/attribution.py  revenue decomposition + Adtributor-style segment ranking + drill-down
-src/rca/narrate.py      the one LLM call (Gemini), strictly grounded in computed numbers
-src/rca/tracing.py      local JSON trace + Langfuse mirroring
-src/rca/pipeline.py     orchestrates detect -> decompose -> drill-down -> narrate
-src/rca/cli.py          `rca scan|investigate|auto`
-traces/                 per-investigation trace trees (local, always written)
-out/                    per-investigation JSON results (diagnosis + full evidence)
-```
+- State what metric dimensions were checked
+- State what metric dimensions were ruled out
 
-## Design notes / what was deliberately ruled out
+# Key Concepts
+## Metric Dimensions
+Here, we interpret the term "metric dimension" as one of two things:
 
-- **Ratio metrics are always `sum/sum`**, never an average of per-row or
-  per-day ratios, per `metrics_glossary.md`'s explicit warning about rollup
-  correctness.
-- **`event_time` is pinned to `DateTime('UTC')`** in the DDL. Leaving it
-  timezone-less lets ClickHouse silently interpret the (naive) source
-  timestamps in the *server's* local timezone — on a server not already set
-  to UTC this shifts every day/hour boundary and quietly corrupts every
-  seasonality comparison. Caught by comparing a min/max date query against
-  the documented Jun 1 – Jul 5 range before writing any analysis code.
-- **Uniform/broad-based moves are reported as such, not forced into a
-  segment-level story.** The Jun 21 request-volume crash in the sample data
-  has explanatory-power ≈ volume-share (lift ≈ 1.0) for every segment of
-  every dimension — i.e. it dropped everywhere in exact proportion to
-  existing traffic. `drill_down` returns `primary = None` in that case, and
-  the narration says the drop was broad-based rather than naming whichever
-  segment happened to be largest.
+- A qualitative categorization/filtering of the metric
+    > E.g.: Categorizing "fill rate" into "fill rate per app".
+- A metric contributing to the metric's value
+    > E.g.: CTR is calculated from clicks and impressions.
+ 
+Metric dimensions serve as the basis for root-cause analysis.
+
+## Advertisement Cost Models
+- Cost per Mille (CPM)
+- Cost per Click (CPC)
+- Cost per Installation (CPI)
+
+The cost model determines how `revenue` is calculated as per:
+
+- `is_impression`
+- `is_click`
+
+# Demo Solution Approach
+> For the demo as a whole (not just the particular problem statement).
+
+- Build an event stream
+- Build a metrics stream
+- Define alerts on the metrics stream - **anomaly detection**
+- Investigation - **attribution**
+- Presentation
+
+## Overall Approach
+1. Break the whole solution into components:
+   1. Fixed components (infrastructure)
+   2. Plug-and-play components (logic/AI)
+2. Build fixed components:
+   1. Event and metric streams
+   2. 
+
+## Build the Event/Metric Streams
+What we have:
+
+- Dataset of ad events
+- Metrics definitions
+
+Key tasks:
+
+- Simulate real-time event stream (metric stream is built on event stream)
+- Allow creating events with user input (for testing)
+
+## Investigation
+Approach:
+
+- Identify the direction and magnitude (D&M) of the metric movement
+- Break down the metric into its metric dimensions
+- Identify the relevant metrics dimensions
+- Identify which metric dimension(s)'s D&M contribute to the metric's D&M
+- Obtain a list of:
+  - Checked metric dimensions (relevant metric dimensions)
+  - Ruled out metric dimensions (irrelevant metric dimensions)
+- Obtain analysis summary
+
+Key questions:
+
+- How to define "relevance"?
+- How would we apply this investigation approach:
+  - using deterministic workflow(s) (defined per metric perhaps)?
+  - using AI workflow(s)
+
+Action:
+
+- Compare the aforementioned deterministic and AI approaches
+- Outline a conceptual workflow that applies for both
