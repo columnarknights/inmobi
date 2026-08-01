@@ -1,4 +1,5 @@
 {
+  "id": "fill_rate_2026-06-23_2026-06-25",
   "metric": "fill_rate",
   "current_window": [
     "2026-06-23",
@@ -15,7 +16,7 @@
       "fills": 648505.0,
       "impressions": 635524.0,
       "clicks": 6890.0,
-      "revenue": 1574.4843439999997
+      "revenue": 1574.4843439999995
     },
     "current_totals": {
       "requests": 843741.0,
@@ -957,7 +958,7 @@
       "primary_segment": null
     }
   },
-  "narrative": "Revenue decreased by 2.38% (-37.5) primarily driven by a drop in fill_rate, which contributed -69.64 to the revenue delta as it fell from 0.785178 to 0.750805. \n\nDrill-down analysis reveals that this fill_rate drop was heavily concentrated in os_version=Android 15, which showed an extreme lift of 10.23 and an explanatory power of 0.98, with its rate plunging from 0.784925 to 0.43331. By contrast, other dimensions such as ad_format=video (lift 0.96) and region=MEA (lift 0.84) were checked and ruled out as they did not exhibit disproportionate impact.\n\nWithin Android 15, the decline was broad-based across all secondary dimensions without a single localized primary segment; for instance, ad_format=banner showed a lift of 1.05 and category=ecommerce showed a lift of 0.97, indicating a uniform platform-wide drop for this OS version.",
-  "local_trace_path": "traces/1785584330_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/6cef60c4c71f642bce76b6f33a2d1e10"
+  "narrative": "Revenue decreased by 2.38% (or 37.5 units) primarily driven by a drop in fill_rate, which fell by 4.38% and contributed -69.64 to the revenue delta. \n\nDrill-down analysis isolates the root cause to os_version=Android 15, which is the primary segment with an overwhelming explanatory power of 0.98 and a high lift of 10.23, as its fill rate plummeted from 0.784925 to 0.43331. Other segments like ad_format=video (lift 0.96) and region=MEA (lift 0.84) were checked and ruled out as they did not drive the anomaly. \n\nLooking deeper within Android 15, the movement is broad-based and proportional across all sub-segments, such as ad_format=banner with a lift of 1.05, showing no further localized concentration.",
+  "local_trace_path": "traces/1785591664_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/ade0f3c31f4aef9814cbd7a6e44bc8ff"
 }

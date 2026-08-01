@@ -20,6 +20,27 @@ function el(tag, cls, text) {
   return e;
 }
 
+async function setupFollowupButton(id, metricLabel, data) {
+  const btn = document.getElementById("followup-btn");
+  try {
+    const meta = await (await fetch("/api/meta")).json();
+    if (!meta.librechat_followup_agent_id) return; // not configured; leave hidden
+    btn.style.display = "";
+    btn.addEventListener("click", () => {
+      const prompt =
+        `Let's discuss incident ${id} (${metricLabel}, ${data.current_window[0]} to ${data.current_window[1]}). ` +
+        `Call get_investigation('${id}') first, then help me understand it further.`;
+      const url = new URL("/c/new", meta.librechat_base_url);
+      url.searchParams.set("agent_id", meta.librechat_followup_agent_id);
+      url.searchParams.set("prompt", prompt);
+      url.searchParams.set("submit", "true");
+      window.open(url.toString(), "_blank", "noopener");
+    });
+  } catch (e) {
+    console.error("Follow-up button setup failed:", e);
+  }
+}
+
 async function main() {
   const params = new URLSearchParams(window.location.search);
   const id = params.get("id");
@@ -43,6 +64,11 @@ async function main() {
     a.href = data.langfuse_trace_url; a.target = "_blank"; a.rel = "noopener";
     links.appendChild(a);
   }
+
+  // data.id is the clean investigation id (no .json suffix) matching the
+  // ClickHouse `investigations` table's primary key — the URL's own `id`
+  // param is the out/*.json filename, which get_investigation() won't match.
+  setupFollowupButton(data.id, metricLabel, data);
   if (data.local_trace_path) {
     links.appendChild(el("span", null, `Local trace: ${data.local_trace_path}`));
   }

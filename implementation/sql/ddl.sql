@@ -80,3 +80,28 @@ CREATE TABLE IF NOT EXISTS fact_events
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(event_time)
 ORDER BY (event_time, app_id, advertiser_id);
+
+-- Persisted results of every investigation the pipeline has run (CLI, web app,
+-- or MCP/chat). This is the only thing the LibreChat follow-up flow is allowed
+-- to read from (see mcp_server.get_investigation/drill_deeper) — the chat
+-- agent never gets raw SELECT access to fact_events, only to what a
+-- deterministic run of the pipeline already validated and computed. Not
+-- touched by scripts/load_data.sh's reload (it's app state, not source data).
+CREATE TABLE IF NOT EXISTS investigations
+(
+    id String,
+    metric LowCardinality(String),
+    current_window_start Date,
+    current_window_end Date,
+    baseline_window_start Date,
+    baseline_window_end Date,
+    drill_factor LowCardinality(String),
+    decomposition String,
+    drill_down String,
+    narrative String,
+    langfuse_trace_url String,
+    local_trace_path String,
+    created_at DateTime('UTC') DEFAULT now()
+)
+ENGINE = ReplacingMergeTree(created_at)
+ORDER BY id;

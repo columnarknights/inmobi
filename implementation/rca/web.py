@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from . import baseline, pipeline
+from .config import settings
 from .db import get_client
 from .metrics import DIMENSIONS, METRICS
 
@@ -39,6 +40,8 @@ def meta():
         "row_count": int(row[2]),
         "metrics": list(METRICS.keys()),
         "dimensions": DIMENSIONS,
+        "librechat_base_url": settings.librechat_base_url,
+        "librechat_followup_agent_id": settings.librechat_followup_agent_id,
     }
 
 

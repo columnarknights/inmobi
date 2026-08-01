@@ -1,4 +1,5 @@
 {
+  "id": "ctr_2026-07-01_2026-07-01",
   "metric": "ctr",
   "current_window": [
     "2026-07-01",
@@ -22,7 +23,7 @@
       "fills": 226386.0,
       "impressions": 221965.0,
       "clicks": 2429.0,
-      "revenue": 548.5551619999999
+      "revenue": 548.5551619999998
     },
     "baseline_factors": {
       "requests": 283383.0,
@@ -1201,7 +1202,7 @@
       }
     }
   },
-  "narrative": "The ctr metric increased by 0.0008 (from 0.01014 to 0.010943), driven primarily by fill_rate, which contributed 22.68 to the revenue delta. \n\nThe movement was heavily concentrated in ad_format=rewarded, which showed an explanatory power of 0.337 and a lift of 3.88. Within rewarded ads, the effect was further concentrated in vertical=gaming, which had an explanatory power of 0.299 and a lift of 4.96. \n\nOther segments, such as ad_format=banner with an explanatory power of 0.039 and a lift of 0.11, were checked and ruled out.",
-  "local_trace_path": "traces/1785584366_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/d9281b0b1d5e3c56233abc9bf09f7a08"
+  "narrative": "The click-through rate (ctr) increased by 0.0008, driven primarily by fill_rate, contributing 22.68 to revenue. \n\nThe movement was heavily concentrated in ad_format=rewarded, which showed an explanatory power of 0.337 and a lift of 3.88. Other segments like ad_format=banner were ruled out with an explanatory power of 0.039 and a lift of 0.11. \n\nDrilling deeper into rewarded ads, the effect was further concentrated within vertical=gaming, which had an explanatory power of 0.299 and a high lift of 4.96. Within this segment, the campaign type CPC was ruled out with an explanatory power of -0.033 and a lift of -0.17.",
+  "local_trace_path": "traces/1785591890_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/c777f8a5eeda8c2a48963242faf59b55"
 }

@@ -3,6 +3,7 @@ narrate, with every ClickHouse query and the final LLM call wrapped in a
 Tracer span so the whole thing is auditable end to end.
 """
 
+import json
 from datetime import date, datetime, timedelta
 
 from . import attribution, baseline
@@ -15,6 +16,41 @@ DEFAULT_METRICS = ["revenue", "fill_rate", "ecpm", "requests", "ctr"]
 
 def parse_date(s: str) -> date:
     return datetime.strptime(s, "%Y-%m-%d").date()
+
+
+def investigation_id(metric: str, start: date, end: date) -> str:
+    return f"{metric}_{start}_{end}"
+
+
+def _persist_investigation(
+    client, result: dict, current: tuple[date, date], baseline_range: tuple[date, date]
+) -> None:
+    """Writes the investigation to the `investigations` table — the only
+    thing the LibreChat follow-up flow is allowed to read (see
+    mcp_server.get_investigation/drill_deeper). Keeps the chat path off raw
+    fact_events entirely, not just discouraged from it by a prompt."""
+    client.insert(
+        "investigations",
+        [[
+            result["id"],
+            result["metric"],
+            current[0],
+            current[1],
+            baseline_range[0],
+            baseline_range[1],
+            result["drill_factor"],
+            json.dumps(result["decomposition"], default=str),
+            json.dumps(result["drill_down"], default=str),
+            result["narrative"],
+            result["langfuse_trace_url"] or "",
+            result["local_trace_path"] or "",
+        ]],
+        column_names=[
+            "id", "metric", "current_window_start", "current_window_end",
+            "baseline_window_start", "baseline_window_end", "drill_factor",
+            "decomposition", "drill_down", "narrative", "langfuse_trace_url", "local_trace_path",
+        ],
+    )
 
 
 def resolve_range(client, start: str | None, end: str | None) -> tuple[date, date]:
@@ -81,7 +117,7 @@ def _segment_dict(s: attribution.SegmentResult) -> dict:
     }
 
 
-def _summarize_drill(level: attribution.DrillLevel, top_n: int = 5) -> dict:
+def summarize_drill(level: attribution.DrillLevel, top_n: int = 5) -> dict:
     out = {
         "factor": level.factor,
         "filters": [{"dimension": d, "value": v} for d, v in level.filters],
@@ -95,7 +131,7 @@ def _summarize_drill(level: attribution.DrillLevel, top_n: int = 5) -> dict:
         }
     out["primary_segment"] = _segment_dict(level.primary) if level.primary else None
     if level.child:
-        out["deeper"] = _summarize_drill(level.child, top_n)
+        out["deeper"] = summarize_drill(level.child, top_n)
     return out
 
 
@@ -119,7 +155,7 @@ def _build_payload(metric, current_start, current_end, baseline_range, decomposi
             },
             "factor_rel_deltas": {k: _round(v, 4) for k, v in decomposition.factor_rel_deltas.items()},
         },
-        "drill_down": _summarize_drill(drill),
+        "drill_down": summarize_drill(drill),
     }
 
 
@@ -166,12 +202,13 @@ def investigate(metric: str, incident_start: date, incident_end: date, max_depth
 
         with tracer.span(f"drill_down[{drill_factor}]", input={"factor": drill_factor, "max_depth": max_depth}) as span:
             drill = attribution.drill_down(client, drill_factor, baseline_range, current, max_depth=max_depth)
-            span.set_output(_summarize_drill(drill))
+            span.set_output(summarize_drill(drill))
 
         payload = _build_payload(metric, incident_start, incident_end, baseline_range, decomposition, drill)
         narrative = narrate_mod.narrate(payload, tracer)
 
         result = {
+            "id": investigation_id(metric, incident_start, incident_end),
             "metric": metric,
             "current_window": [str(incident_start), str(incident_end)],
             "baseline_window": [str(baseline_range[0]), str(baseline_range[1])],
@@ -185,4 +222,5 @@ def investigate(metric: str, incident_start: date, incident_end: date, max_depth
         tracer.set_output({"narrative": narrative})
 
     result["local_trace_path"] = str(tracer.local_trace_path) if tracer.local_trace_path else None
+    _persist_investigation(client, result, current, baseline_range)
     return result

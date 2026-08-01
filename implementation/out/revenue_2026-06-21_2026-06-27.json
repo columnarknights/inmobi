@@ -1,4 +1,5 @@
 {
+  "id": "revenue_2026-06-21_2026-06-27",
   "metric": "revenue",
   "current_window": [
     "2026-06-21",
@@ -533,7 +534,7 @@
     },
     "primary_segment": null
   },
-  "narrative": "Revenue decreased by -5.57% (-191.49), driven primarily by a drop in requests, which contributed -127.14 to the decline, alongside a decrease in fill rate. \n\nWhen drilling into requests, the movement was broad-based and proportional across all checked dimensions rather than localized to a single primary cause. For instance, within the ad_format dimension, the banner segment showed a lift of 0.98 with an explanatory power of 0.34, closely mirroring its baseline volume share. \n\nOther segments such as video under ad_format were checked and ruled out, showing an explanatory power of 0.128 and a lift of 0.98. Similarly, publisher_tier, region, category, country, device_model, and os_version all exhibited lifts near 1, confirming that the decline in requests was evenly distributed across the platform.",
-  "local_trace_path": "traces/1785584326_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/3c4aa21149dd62e0ee8445a1c83f628f"
+  "narrative": "Revenue decreased by 191.49 (a relative drop of 0.0557), driven primarily by a decline in requests contributing -127.14 to the drop, alongside a decrease in fill rate. \n\nWhen drilling down into requests, the movement was broad-based and proportional across all checked segments rather than concentrated in a single localized source. For instance, the ad_format segment banner showed a lift of 0.98 with an explanatory power of 0.34, closely mirroring its volume share. Similarly, other segments such as the video ad format (lift 0.98, explanatory power 0.128) and the MEA region (lift 0.98, explanatory power 0.101) were checked and ruled out as they did not exhibit disproportionate shifts.",
+  "local_trace_path": "traces/1785591660_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/af13faf734280d438ebb390db81f8731"
 }

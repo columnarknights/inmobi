@@ -40,5 +40,8 @@ class Settings:
     langfuse_secret_key: str = _get("LANGFUSE_SECRET_KEY", "")
     langfuse_host: str = _get("LANGFUSE_HOST", "https://cloud.langfuse.com")
 
+    librechat_base_url: str = _get("LIBRECHAT_BASE_URL", "http://localhost:3080")
+    librechat_followup_agent_id: str = _get("LIBRECHAT_FOLLOWUP_AGENT_ID", "")
+
 
 settings = Settings()

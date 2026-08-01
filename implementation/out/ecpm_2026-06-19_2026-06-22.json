@@ -1,4 +1,5 @@
 {
+  "id": "ecpm_2026-06-19_2026-06-22",
   "metric": "ecpm",
   "current_window": [
     "2026-06-19",
@@ -15,14 +16,14 @@
       "fills": 769927.0,
       "impressions": 754408.0,
       "clicks": 8385.0,
-      "revenue": 1867.8815399999999
+      "revenue": 1867.8815399999994
     },
     "current_totals": {
       "requests": 896618.0,
       "fills": 704073.0,
       "impressions": 689868.0,
       "clicks": 7297.0,
-      "revenue": 1666.507314
+      "revenue": 1666.5073139999997
     },
     "baseline_factors": {
       "requests": 981284.0,
@@ -1201,7 +1202,7 @@
       }
     }
   },
-  "narrative": "Revenue decreased by -201.37 (-10.78%), driven primarily by a drop in requests (contributing -159.28) and ecpm (contributing -43.5), where ecpm fell from 2.475957 to 2.41569. \n\nDrilling into ecpm, the movement was primarily concentrated in category=finance, which showed an explanatory power of 0.988 and a high lift of 13.75, with its rate dropping from 2.463602 to 1.613249. Other segments such as category=social (explanatory power -0.035, lift -0.37) were ruled out. \n\nGoing one level deeper within category=finance, the decline was further concentrated in ad_format=video, backed by an explanatory power of 0.356 and a lift of 2.69, where the rate fell from 6.532778 to 4.257584. Meanwhile, ad_format=banner within finance was ruled out with an explanatory power of 0.069 and a lift of 0.2.",
-  "local_trace_path": "traces/1785584335_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/cd1214581b99d722d1df8972c78d8e96"
+  "narrative": "Ecpm experienced a relative decline of -0.0243, driven primarily by ecpm, which contributed -43.5 to the revenue drop. The drop was heavily concentrated in category=finance, which accounted for an explanatory power of 0.988 with a high lift of 13.75. Segments like category=social with an explanatory power of -0.035 were checked and ruled out. Drilling deeper within category=finance, the decline was further concentrated in ad_format=video, showing an explanatory power of 0.356 and a lift of 2.69, while ad_format=banner with an explanatory power of 0.069 was ruled out.",
+  "local_trace_path": "traces/1785591673_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/856ea68307ab497ede8f48b442d66c24"
 }
