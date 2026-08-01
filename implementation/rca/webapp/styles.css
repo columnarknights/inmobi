@@ -194,6 +194,36 @@ section h2 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
 .trace-links { display: flex; gap: 14px; font-size: 12px; margin-top: 12px; }
 .trace-links a { color: var(--series-1); }
 
+/* The headline card: the single answer, before any evidence/tables. */
+.headline-card {
+  border-radius: 12px; padding: 22px 24px; margin-bottom: 26px;
+  border: 1px solid var(--border); box-shadow: var(--card-shadow);
+}
+.headline-card.localized { background: rgba(208,59,59,0.06); border-color: var(--critical); }
+.headline-card.broad { background: var(--surface-1); }
+.headline-eyebrow {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-secondary); margin-bottom: 8px;
+}
+.headline-main { font-size: 26px; font-weight: 700; line-height: 1.25; margin-bottom: 8px; }
+.headline-card.localized .headline-main { color: var(--critical); }
+.headline-sub { font-size: 14px; color: var(--text-secondary); line-height: 1.5; max-width: 70ch; }
+
+.section-hint { font-size: 13px; color: var(--text-secondary); margin: -6px 0 14px; }
+
+/* Collapsed-by-default evidence: the tables are the receipts, not the headline. */
+.evidence-details { margin-bottom: 18px; }
+.evidence-details > summary {
+  cursor: pointer; font-size: 13px; font-weight: 600; color: var(--series-1);
+  padding: 10px 14px; background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 8px; list-style: none;
+}
+.evidence-details > summary::-webkit-details-marker { display: none; }
+.evidence-details > summary::before { content: "▸ "; }
+.evidence-details[open] > summary::before { content: "▾ "; }
+.evidence-details[open] > summary { border-radius: 8px 8px 0 0; margin-bottom: 0; }
+.evidence-details .dim-block:first-of-type { border-top: none; }
+
 .factor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 24px; }
 .factor-tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; box-shadow: var(--card-shadow); }
 .factor-tile .label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.02em; margin-bottom: 4px; }

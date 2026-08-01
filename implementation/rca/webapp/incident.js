@@ -74,8 +74,43 @@ async function main() {
   }
   narrativeEl.appendChild(links);
 
+  renderHeadline(data.drill_down);
   renderFactors(data.decomposition);
   renderDrillTree(document.getElementById("drill-tree"), data.drill_down, 0);
+}
+
+// The single most important thing on the page: what's the answer? Walks the
+// full drill-down chain (a level can recurse into `deeper`) to find the most
+// specific localization, e.g. "category=finance -> ad_format=video", or says
+// plainly that nothing localized if no level found a disproportionate cause.
+function renderHeadline(drillDown) {
+  const card = document.getElementById("headline");
+  const path = [];
+  let level = drillDown;
+  while (level) {
+    if (level.primary_segment) path.push(level.primary_segment);
+    level = level.deeper;
+  }
+
+  if (path.length === 0) {
+    card.className = "headline-card broad";
+    card.innerHTML = "";
+    card.appendChild(el("div", "headline-eyebrow", "ROOT CAUSE"));
+    card.appendChild(el("div", "headline-main", "No single segment stands out"));
+    card.appendChild(el("div", "headline-sub",
+      "Every segment checked moved in proportion to its own size — this looks like a broad, system-wide change rather than one localized cause."));
+    return;
+  }
+
+  card.className = "headline-card localized";
+  card.innerHTML = "";
+  card.appendChild(el("div", "headline-eyebrow", "ROOT CAUSE"));
+  const pathText = path.map((p) => `${p.dimension} = ${p.value}`).join("  →  ");
+  card.appendChild(el("div", "headline-main", pathText));
+  const last = path[path.length - 1];
+  card.appendChild(el("div", "headline-sub",
+    `Rate went from ${fmtNumber(last.rate_baseline)} to ${fmtNumber(last.rate_current)} in this segment ` +
+    `(explains ${fmtPct(last.explanatory_power)} of the movement, ${last.lift.toFixed(1)}x more than its size would predict).`));
 }
 
 function renderFactors(decomp) {
@@ -119,22 +154,19 @@ function renderDrillTree(container, level, depth) {
     wrap.appendChild(f);
   }
 
-  if (level.primary_segment) {
-    const p = level.primary_segment;
-    const banner = el("div", "narrative-snippet",
-      `Localized cause at this level: ${p.dimension}=${p.value} (explanatory power ${p.explanatory_power}, lift ${p.lift}×)`);
-    banner.style.fontWeight = "600";
-    banner.style.color = "var(--critical)";
-    banner.style.marginBottom = "10px";
-    wrap.appendChild(banner);
-  } else {
-    const banner = el("div", "narrative-snippet", "No single segment disproportionately explains this level — movement looks broad-based/proportional.");
-    banner.style.marginBottom = "10px";
-    wrap.appendChild(banner);
-  }
-
   const dims = level.dimensions_checked || {};
-  Object.keys(dims).forEach((dimName) => {
+  const dimNames = Object.keys(dims);
+  const totalSegments = dimNames.reduce((n, d) => n + (dims[d].top_segments || []).length, 0);
+
+  const details = document.createElement("details");
+  details.className = "evidence-details";
+  const summary = document.createElement("summary");
+  summary.textContent = level.primary_segment
+    ? `Show full evidence at this level (${dimNames.length} dimensions, ${totalSegments} segments checked)`
+    : `Show what was checked (${dimNames.length} dimensions, ${totalSegments} segments — none stood out)`;
+  details.appendChild(summary);
+
+  dimNames.forEach((dimName) => {
     const info = dims[dimName];
     const block = el("div", "dim-block");
     block.appendChild(el("div", "dim-name",
@@ -142,34 +174,39 @@ function renderDrillTree(container, level, depth) {
     const table = document.createElement("table");
     table.className = "seg-table";
     const thead = document.createElement("thead");
-    thead.innerHTML = "<tr><th>Value</th><th>Explanatory power</th><th>Lift</th><th>Volume share</th><th>Rate (base → current)</th><th>Status</th></tr>";
+    thead.innerHTML = "<tr><th>Status</th><th>Value</th><th>Rate (base → current)</th><th>Volume share</th><th>Explanatory power</th><th>Lift</th></tr>";
     table.appendChild(thead);
     const tbody = document.createElement("tbody");
     (info.top_segments || []).forEach((s) => {
+      const isPrimary = level.primary_segment && s.value === level.primary_segment.value && dimName === level.primary_segment.dimension;
       const tr = document.createElement("tr");
-      tr.className = (level.primary_segment && s.value === level.primary_segment.value && dimName === level.primary_segment.dimension)
-        ? "primary-row" : (s.ruled_out ? "ruled-out" : "");
+      tr.className = isPrimary ? "primary-row" : (s.ruled_out ? "ruled-out" : "");
+
+      const statusTd = document.createElement("td");
+      statusTd.textContent = isPrimary ? "🔴 Localized cause" : (s.ruled_out ? "Ruled out" : "Notable, not primary");
+      tr.appendChild(statusTd);
+
       const cells = [
         s.value,
+        `${fmtNumber(s.rate_baseline)} → ${fmtNumber(s.rate_current)}`,
+        fmtPct(s.volume_share_current),
         s.explanatory_power,
         s.lift,
-        fmtPct(s.volume_share_current),
-        `${fmtNumber(s.rate_baseline)} → ${fmtNumber(s.rate_current)}`,
-        s.ruled_out ? "ruled out" : "significant",
       ];
       cells.forEach((c, i) => {
         const td = document.createElement("td");
         td.textContent = c;
-        if (i === 2 && Math.abs(s.lift) >= 1.8) td.className = "lift-cell hot";
+        if (i === 4 && Math.abs(s.lift) >= 1.8) td.className = "lift-cell hot";
         tr.appendChild(td);
       });
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
     block.appendChild(table);
-    wrap.appendChild(block);
+    details.appendChild(block);
   });
 
+  wrap.appendChild(details);
   container.appendChild(wrap);
 
   if (level.deeper) {
