@@ -78,7 +78,13 @@ def scan(
                 span.set_output({"n_days_fetched": len(series)})
 
             with tracer.span(f"detect_anomalies[{metric}]", input={"lookback_weeks": lookback_weeks}) as span:
-                anomalies = baseline.detect_anomalies(series, metric, lookback_weeks=lookback_weeks)
+                # detect_anomalies evaluates the whole fetched series, which
+                # includes the lookback buffer *before* `start` (needed as
+                # history for the earliest in-range days) -- filter back down
+                # to the actually-requested window before merging, or a scan
+                # of a narrow range can silently return incidents dated
+                # before its own `start`.
+                anomalies = [a for a in baseline.detect_anomalies(series, metric, lookback_weeks=lookback_weeks) if a.event_date >= start]
                 incidents = baseline.merge_into_incidents(anomalies)
                 span.set_output(
                     {
