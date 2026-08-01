@@ -12,6 +12,7 @@
   - [Metric Dimensions](#metric-dimensions)
   - [Advertisement Cost Models](#advertisement-cost-models)
 - [Demo Solution Approach](#demo-solution-approach)
+  - [Overall Approach](#overall-approach)
   - [Build the Event/Metric Streams](#build-the-eventmetric-streams)
   - [Investigation](#investigation)
 
@@ -102,9 +103,17 @@ The cost model determines how `revenue` is calculated as per:
 
 - Build an event stream
 - Build a metrics stream
-- Define alerts on the metrics stream
-- Investigation
+- Define alerts on the metrics stream - **anomaly detection**
+- Investigation - **attribution**
 - Presentation
+
+## Overall Approach
+1. Break the whole solution into components:
+   1. Fixed components (infrastructure)
+   2. Plug-and-play components (logic/AI)
+2. Build fixed components:
+   1. Event and metric streams
+   2. 
 
 ## Build the Event/Metric Streams
 What we have:
