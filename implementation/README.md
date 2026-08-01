@@ -101,49 +101,70 @@ with no arguments scans the full date range currently loaded in
 `fact_events` — this is what to run against the unseen-incident dataset once
 it's loaded, with no code changes.
 
+## Running it all: one `docker compose up`
+
+The dashboard, its MCP server, LibreChat, LibreChat's database, and the
+official ClickHouse MCP server are all defined in one file: the repo-root
+`docker-compose.yml`. From the repo root:
+
+```bash
+cp implementation/.env.example implementation/.env   # fill in CLICKHOUSE_*, GEMINI_API_KEY
+cp librechat/.env.example librechat/.env             # fill in the same + generate JWT/CREDS secrets
+docker compose up -d --build --wait
+```
+
+(`setup_teammate.py` at the repo root automates all of the above, including
+generating the JWT/CREDS secrets and creating your personal follow-up agent —
+see below.) `--wait` blocks until every service's healthcheck passes, so
+there's nothing to poll for manually. This replaces what used to be three
+separate consoles (`rca serve`, `rca mcp-serve`, `cd librechat && docker
+compose up`).
+
+For local development where you want fast edit/reload on just the dashboard
+or MCP server without a rebuild, `rca serve` / `rca mcp-serve` still work
+directly against a `pip install -e .`'d checkout — see below.
+
 ## Dashboard
 
 ```bash
-rca serve   # http://127.0.0.1:8000
+rca serve   # http://127.0.0.1:8000 -- or via docker compose, see above
 ```
 
-A live homepage: metric tabs (revenue/fill_rate/eCPM/requests/CTR), a
-hand-rolled SVG chart with a hover crosshair + tooltip and anomaly markers
-(pulled live from `/api/timeseries`, which runs the same baseline/detection
-code as the CLI), a "Scan for incidents" button that runs detection +
-investigation live, and an incident list linking to a full drill-down report
-per incident (revenue decomposition, the segment tree, ruled-out segments,
-the narrative, and the Langfuse trace link) — see `src/rca/web.py` and
-`src/rca/webapp/`.
+A live homepage: metric tabs (revenue/fill_rate/eCPM), a hand-rolled SVG
+chart with a hover crosshair + tooltip, anomaly markers, and a dashed
+baseline line (pulled live from `/api/timeseries`, which runs the same
+baseline/detection code as the CLI), a "Scan for incidents" button that runs
+detection + investigation live, and an incident list linking to a full
+drill-down report per incident (revenue decomposition, the Q&A investigation
+tree, ruled-out segments, the narrative, and the Langfuse trace link) — see
+`rca/web.py` and `rca/webapp/`.
 
 ## MCP server + LibreChat (chat interface)
 
-`src/rca/mcp_server.py` exposes the validated pipeline as MCP tools
+`rca/mcp_server.py` exposes the validated pipeline as MCP tools
 (`scan_for_incidents`, `investigate_incident`, `get_metric_timeseries`,
 `list_metrics_and_dimensions`, `get_investigation`, `drill_deeper`) — a chat
 client calling these gets the exact same grounded, traced diagnosis as the
 CLI/dashboard, not a freeform guess.
 
 ```bash
-rca mcp-serve   # http://0.0.0.0:8001/mcp, run alongside the dashboard
+rca mcp-serve   # http://0.0.0.0:8001/mcp -- or via docker compose, see above
 ```
 
 `librechat/` wires this into [LibreChat](https://www.librechat.ai/) as the
 chat UI, registering **two** MCP servers so both pre-built investigations and
 open-ended SQL questions are grounded in real data:
 
-- **`rca-investigator`** — this project's own pipeline (above), run on the
-  host.
+- **`rca-investigator`** — this project's own pipeline (above), its own
+  container (`rca-mcp` in `docker-compose.yml`).
 - **`clickhouse`** — the official [ClickHouse MCP server](https://github.com/ClickHouse/mcp-clickhouse)
   (the "starting point" the problem statement names), running as its own
   container, for ad-hoc `list_databases` / `list_tables` / `run_select_query`
   follow-ups beyond the pre-built tools.
 
-```bash
-cd librechat
-cp .env.example .env   # fill in GOOGLE_KEY (same Gemini key), CLICKHOUSE_*, generate the JWT/CREDS secrets
-docker compose up -d
-```
+Brought up by the single `docker compose up -d --build --wait` above (or
+`cd librechat && cp .env.example .env` and fill in the same values, if you
+only want the LibreChat side without the dashboard).
 
 Then open http://localhost:3080, sign up (local auth, no email verification
 in this config), pick **Google → gemini-flash-lite-latest** as the model
@@ -210,20 +231,22 @@ check only `get_investigation` and `drill_deeper` → Create → copy the new
 ## Project layout
 
 ```
-sql/ddl.sql            table definitions (raw + denormalized fact_events + investigations)
+docker-compose.yml (repo root)   the whole stack: rca-dashboard, rca-mcp, librechat, mongodb, clickhouse-mcp
+implementation/Dockerfile        one image for both rca-dashboard and rca-mcp (different CMD)
+sql/ddl.sql             table definitions (raw + denormalized fact_events + investigations)
 sql/build_fact.sql      one-time join that builds fact_events
 scripts/load_data.sh    idempotent full data load (Cloud or local)
-src/rca/metrics.py      metric + dimension definitions (matches metrics_glossary.md exactly)
-src/rca/baseline.py     like-for-like baseline + anomaly detection
-src/rca/attribution.py  revenue decomposition + Adtributor-style segment ranking + drill-down
-src/rca/narrate.py      the one LLM call (Gemini), strictly grounded in computed numbers
-src/rca/tracing.py      local JSON trace + Langfuse mirroring
-src/rca/pipeline.py     orchestrates detect -> decompose -> drill-down -> narrate
-src/rca/cli.py          `rca scan|investigate|auto|serve|mcp-serve`
-src/rca/web.py          dashboard/incident-report API (FastAPI) + static file serving
-src/rca/webapp/         dashboard homepage + incident detail page (vanilla HTML/JS/SVG)
-src/rca/mcp_server.py   MCP tools wrapping the pipeline (incl. the scoped get_investigation/drill_deeper)
-librechat/              LibreChat stack: docker-compose.yml + librechat.yaml (MCP + Gemini wiring)
+rca/metrics.py          metric + dimension definitions (matches metrics_glossary.md exactly)
+rca/baseline.py         like-for-like baseline + anomaly detection
+rca/attribution.py      revenue decomposition + Adtributor-style segment ranking + drill-down
+rca/narrate.py          the one LLM call (Gemini), strictly grounded in computed numbers
+rca/tracing.py          local JSON trace + Langfuse mirroring
+rca/pipeline.py         orchestrates detect -> decompose -> drill-down -> narrate
+rca/cli.py              `rca scan|investigate|auto|serve|mcp-serve`
+rca/web.py              dashboard/incident-report API (FastAPI) + static file serving
+rca/webapp/             dashboard homepage + incident detail page (vanilla HTML/JS/SVG)
+rca/mcp_server.py       MCP tools wrapping the pipeline (incl. the scoped get_investigation/drill_deeper)
+librechat/              librechat.yaml (MCP + Gemini wiring); docker-compose.yml lives at the repo root now
 librechat/create_followup_agent.py   one-time setup for the scoped "RCA Follow-up" agent
 traces/                 per-investigation trace trees (local, always written)
 out/                    per-investigation JSON results (diagnosis + full evidence)

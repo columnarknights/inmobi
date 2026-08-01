@@ -4,24 +4,29 @@
 Run from the repo root: `python3 setup_teammate.py`
 
 What it does, fully automated:
-  1. Creates implementation/.venv and installs the rca package into it.
+  1. Creates implementation/.venv (only needed for the one-off browser
+     automation in step 6 below -- the dashboard/MCP server themselves run in
+     Docker now, not on the host).
   2. Prompts once for the team's ClickHouse Cloud credentials + your own
-     Gemini API key (skipped if implementation/.env is already filled in —
+     Gemini API key (skipped if implementation/.env is already filled in --
      safe to re-run).
   3. Writes librechat/.env with freshly generated secrets (JWT/CREDS keys)
-     and the same ClickHouse/Gemini values — this is the #1 cause of
+     and the same ClickHouse/Gemini values -- this is the #1 cause of
      "JwtStrategy requires a secret" and missing-signup-option errors when
      someone hand-copies .env.example and misses a field.
-  4. Starts the LibreChat containers (docker compose).
-  5. Starts `rca mcp-serve` and `rca serve` on the host, in the background.
-  6. Creates YOUR OWN personal "RCA Follow-up" agent in your LibreChat
+  4. `docker compose up -d --build --wait` from the repo root -- brings up
+     LibreChat + its database + the ClickHouse MCP server + this project's
+     own dashboard + MCP server, all from ONE command instead of three
+     separate consoles, and waits until every service's healthcheck passes.
+  5. Creates YOUR OWN personal "RCA Follow-up" agent in your LibreChat
      instance (via librechat/create_followup_agent.py) and writes its id
-     into implementation/.env — this is the #2 cause of errors ("Agent not
+     into implementation/.env, then restarts the rca-dashboard container so
+     it picks up the new value -- this is the #2 cause of errors ("Agent not
      found" / "Insufficient permissions"): agent ids are specific to one
      LibreChat instance, so everyone needs their own.
 
-Safe to re-run: existing .env files and an already-created agent are reused,
-not recreated.
+Safe to re-run: existing .env files, an already-created agent, and already-
+built images are all reused, not recreated.
 """
 
 import getpass
@@ -31,9 +36,6 @@ import secrets
 import shutil
 import subprocess
 import sys
-import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -82,17 +84,6 @@ def patch_env(path: Path, values: dict) -> None:
     path.write_text(text)
 
 
-def wait_for(url: str, timeout: int = 60) -> bool:
-    start = time.time()
-    while time.time() - start < timeout:
-        try:
-            urllib.request.urlopen(url, timeout=2)
-            return True
-        except (urllib.error.URLError, TimeoutError, ConnectionError):
-            time.sleep(2)
-    return False
-
-
 def section(title: str) -> None:
     print(f"\n=== {title} ===")
 
@@ -100,7 +91,7 @@ def section(title: str) -> None:
 def main() -> None:
     print("Automated Root-Cause Analyst — one-command teammate setup\n")
 
-    # --- 1. Python env ---------------------------------------------------
+    # --- 1. Python env (only needed for the Playwright agent-creation step) ---
     section("Setting up implementation/.venv")
     venv_dir = IMPL / ".venv"
     if not venv_dir.exists():
@@ -161,42 +152,18 @@ def main() -> None:
         })
         print("  Wrote librechat/.env with freshly generated secrets")
 
-    # --- 4. LibreChat containers -------------------------------------------
-    section("Starting LibreChat (docker compose)")
-    run(["docker", "compose", "up", "-d"], cwd=LIBRECHAT)
-    print("  Waiting for LibreChat to respond...")
-    if not wait_for("http://localhost:3080/login", timeout=90):
-        print("  WARNING: LibreChat didn't respond within 90s.")
-        print("  Check: cd librechat && docker compose logs librechat")
+    # --- 4. Everything else: one docker compose, from the repo root --------
+    section("Starting the stack (docker compose up -d --build --wait)")
+    print("  This brings up LibreChat, its database, the ClickHouse MCP server,")
+    print("  and this project's own dashboard + MCP server -- one command,")
+    print("  no separate consoles. May take a minute the first time (image build).")
+    try:
+        run(["docker", "compose", "up", "-d", "--build", "--wait"], cwd=ROOT)
+    except subprocess.CalledProcessError:
+        print("  WARNING: not every service reported healthy in time.")
+        print("  Check: docker compose ps   /   docker compose logs -f")
 
-    # --- 5. Host-side servers -----------------------------------------------
-    section("Starting rca mcp-serve and rca serve")
-    logs_dir = IMPL / ".setup_logs"
-    logs_dir.mkdir(exist_ok=True)
-    rca = venv_bin(venv_dir, "rca")
-
-    def start_background(args, log_name):
-        log_path = logs_dir / log_name
-        return subprocess.Popen(
-            [rca, *args], cwd=IMPL,
-            stdout=open(log_path, "w"), stderr=subprocess.STDOUT,
-        )
-
-    if not wait_for("http://127.0.0.1:8001/mcp", timeout=1):
-        start_background(["mcp-serve"], "mcp_serve.log")
-    else:
-        print("  rca mcp-serve already running on :8001, leaving it as-is.")
-    if not wait_for("http://127.0.0.1:8000/api/meta", timeout=1):
-        start_background(["serve"], "web_serve.log")
-    else:
-        print("  rca serve already running on :8000, leaving it as-is.")
-
-    if not wait_for("http://127.0.0.1:8001/mcp", timeout=30):
-        print("  WARNING: MCP server (port 8001) didn't come up — see implementation/.setup_logs/mcp_serve.log")
-    if not wait_for("http://127.0.0.1:8000/api/meta", timeout=30):
-        print("  WARNING: dashboard (port 8000) didn't come up — see implementation/.setup_logs/web_serve.log")
-
-    # --- 6. Personal "RCA Follow-up" agent ----------------------------------
+    # --- 5. Personal "RCA Follow-up" agent ----------------------------------
     section("Creating your personal 'RCA Follow-up' agent")
     if existing.get("LIBRECHAT_FOLLOWUP_AGENT_ID"):
         print(f"  Already set (LIBRECHAT_FOLLOWUP_AGENT_ID={existing['LIBRECHAT_FOLLOWUP_AGENT_ID']}), skipping.")
@@ -215,24 +182,22 @@ def main() -> None:
                 "LIBRECHAT_FOLLOWUP_AGENT_ID": agent_id,
             })
             print(f"  Wrote LIBRECHAT_FOLLOWUP_AGENT_ID={agent_id} to implementation/.env")
-            print("  Restarting rca serve so the dashboard picks it up...")
-            subprocess.run(["pkill", "-f", f"{rca} serve"], check=False)
-            time.sleep(1)
-            start_background(["serve"], "web_serve.log")
-            wait_for("http://127.0.0.1:8000/api/meta", timeout=15)
+            print("  Restarting rca-dashboard so it picks up the new agent id...")
+            run(["docker", "compose", "up", "-d", "--wait", "rca-dashboard"], cwd=ROOT)
         else:
             print(result.stderr)
             print(
                 "  Automatic agent creation failed. Follow the ~2-minute manual\n"
                 "  steps in implementation/README.md under \"Setting it up\", then\n"
                 "  add LIBRECHAT_FOLLOWUP_AGENT_ID=<the id> to implementation/.env\n"
-                "  yourself and restart `rca serve`."
+                "  yourself and run: docker compose up -d --wait rca-dashboard"
             )
 
     section("Done")
     print("  Dashboard:  http://127.0.0.1:8000")
     print("  LibreChat:  http://localhost:3080  (sign up with any email/password)")
-    print("  Logs:       implementation/.setup_logs/")
+    print("  Logs:       docker compose logs -f")
+    print("  Stop all:   docker compose down")
 
 
 if __name__ == "__main__":
