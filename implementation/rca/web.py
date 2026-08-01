@@ -129,10 +129,26 @@ def _severity_for(metric_rel_delta: float | None) -> str:
 
 def _confidence_for(segment_chain: list[dict]) -> int | None:
     """None (not 0) for a broad-based incident -- there's no cause to be
-    confident about, which is a different thing from being confident it's 0%."""
+    confident about, which is a different thing from being confident it's 0%.
+
+    Uses the ROOT level (segment_chain[0]), not the deepest one. explanatory_power
+    at depth > 0 is computed against the movement *within the parent segment's
+    filter* (attribution.rank_segments sums totals only from the filtered
+    `rows`), not against the original total -- so a deeper segment's EP isn't
+    comparable to a root-level EP from a different (shallower) incident. The
+    root level has no filter, so it's always a fraction of the true total
+    movement, and is the only one that's consistent across incidents regardless
+    of how deep any given drill-down happened to go.
+    """
     if not segment_chain:
         return None
-    return round(segment_chain[-1]["explanatory_power"] * 100)
+    # Raw explanatory_power can fall outside [0, 1] -- when some segments move
+    # opposite the overall trend, the ones moving with it can legitimately
+    # explain >100% of the net movement on their own (they're offset by the
+    # others). That's correct Adtributor math, but confusing as a displayed
+    # percentage, so it's clamped to a sane 0-100 range here.
+    pct = round(segment_chain[0]["explanatory_power"] * 100)
+    return max(0, min(100, pct))
 
 
 def _segment_chain(drill_down: dict | None) -> list[dict]:
