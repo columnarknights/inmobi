@@ -48,7 +48,13 @@ services:
 
   librechat:
     container_name: librechat
-    image: registry.librechat.ai/danny-avila/librechat-dev:latest
+    # Pinned to the exact build create_followup_agent.py's selectors were
+    # tested against -- `:latest` is a moving target, and a newer build can
+    # change the Agent Builder UI enough to break the Playwright automation
+    # (this is exactly what happened to a teammate: a `text=TOOLS` selector
+    # timeout because their `:latest` pull landed on a different UI version
+    # than the one this script was written against).
+    image: registry.librechat.ai/danny-avila/librechat-dev@sha256:598c70f97a4987e5e5f2841fc3708c9c287544bd7b72176446e35dd9f02075e7
     ports:
       - "${PORT:-3080}:${PORT:-3080}"
     depends_on:
