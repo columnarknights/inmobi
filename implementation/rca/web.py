@@ -20,7 +20,7 @@ from .config import settings
 from .db import get_client
 from .metrics import DIMENSIONS, METRICS
 
-ROOT = Path(__file__).resolve().parent.parent.parent
+ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "out"
 WEBAPP_DIR = Path(__file__).resolve().parent / "webapp"
 

@@ -52,6 +52,17 @@ exactly what was checked, in what order, and why.
    credentials are set they're mirrored live to Langfuse as well, nested
    exactly as they nest in code.
 
+There are three ways to use it, all backed by the same deterministic pipeline
+(`src/rca/pipeline.py`) and the same traces:
+
+- **CLI** (`rca scan|investigate|auto`) — scripted / scriptable, JSON + trace
+  output for every run.
+- **Dashboard** (`rca serve`) — a small web app: live metric charts with
+  anomaly markers, an incident list, and a full drill-down report per incident.
+- **Chat** (LibreChat, via MCP) — ask for an investigation (or an ad-hoc SQL
+  question) in natural language; the chat model calls the exact same pipeline
+  as a tool, so answers are grounded in the same real numbers.
+
 ## Setup
 
 ```bash
@@ -90,10 +101,116 @@ with no arguments scans the full date range currently loaded in
 `fact_events` — this is what to run against the unseen-incident dataset once
 it's loaded, with no code changes.
 
+## Dashboard
+
+```bash
+rca serve   # http://127.0.0.1:8000
+```
+
+A live homepage: metric tabs (revenue/fill_rate/eCPM/requests/CTR), a
+hand-rolled SVG chart with a hover crosshair + tooltip and anomaly markers
+(pulled live from `/api/timeseries`, which runs the same baseline/detection
+code as the CLI), a "Scan for incidents" button that runs detection +
+investigation live, and an incident list linking to a full drill-down report
+per incident (revenue decomposition, the segment tree, ruled-out segments,
+the narrative, and the Langfuse trace link) — see `src/rca/web.py` and
+`src/rca/webapp/`.
+
+## MCP server + LibreChat (chat interface)
+
+`src/rca/mcp_server.py` exposes the validated pipeline as MCP tools
+(`scan_for_incidents`, `investigate_incident`, `get_metric_timeseries`,
+`list_metrics_and_dimensions`, `get_investigation`, `drill_deeper`) — a chat
+client calling these gets the exact same grounded, traced diagnosis as the
+CLI/dashboard, not a freeform guess.
+
+```bash
+rca mcp-serve   # http://0.0.0.0:8001/mcp, run alongside the dashboard
+```
+
+`librechat/` wires this into [LibreChat](https://www.librechat.ai/) as the
+chat UI, registering **two** MCP servers so both pre-built investigations and
+open-ended SQL questions are grounded in real data:
+
+- **`rca-investigator`** — this project's own pipeline (above), run on the
+  host.
+- **`clickhouse`** — the official [ClickHouse MCP server](https://github.com/ClickHouse/mcp-clickhouse)
+  (the "starting point" the problem statement names), running as its own
+  container, for ad-hoc `list_databases` / `list_tables` / `run_select_query`
+  follow-ups beyond the pre-built tools.
+
+```bash
+cd librechat
+cp .env.example .env   # fill in GOOGLE_KEY (same Gemini key), CLICKHOUSE_*, generate the JWT/CREDS secrets
+docker compose up -d
+```
+
+Then open http://localhost:3080, sign up (local auth, no email verification
+in this config), pick **Google → gemini-flash-lite-latest** as the model
+(*not* the "Gemini" custom endpoint — see gotcha below), enable both MCP
+servers from the paperclip/tools menu, and ask something like *"why did fill
+rate drop between 2026-06-23 and 2026-06-25, and what segment is
+responsible?"*
+
+**Gotcha worth knowing:** this repo also registers a "Gemini" *custom*
+(OpenAI-compatible) endpoint in `librechat.yaml`, hitting Gemini's
+OpenAI-compat REST shim — fine for plain chat, but **multi-turn tool calls
+fail on it** with a 400 error. Gemini's function calling requires a
+`thought_signature` to be echoed back on the next turn, delivered via a
+Gemini-specific field the generic OpenAI-compat client doesn't know to
+preserve. The native **Google** endpoint (`GOOGLE_KEY`/`GOOGLE_MODELS` in
+`librechat/.env`) uses LibreChat's first-party Gemini integration instead,
+which handles this correctly — that's the one to pick for any MCP/tool-using
+conversation.
+
+### "Follow up in chat" — scoped to one incident, not the dataset
+
+Every incident detail page has a **Follow up in chat →** button. Clicking it
+opens a new LibreChat conversation, pre-seeded with that incident's id and
+auto-submitted, using a second, deliberately narrow agent: **RCA Follow-up**.
+
+This exists to keep hallucination surface small. The general chat path above
+(`RCA Investigator` + the raw `clickhouse` MCP server) can run arbitrary SQL
+against the full 9M-row `fact_events` table — powerful, but if a user's
+follow-up question is answered by the model writing its own ad-hoc query,
+every number in that answer is only as trustworthy as that query. The
+follow-up flow avoids that entirely:
+
+- **`investigations` table** (`sql/ddl.sql`): every investigation the
+  pipeline runs — from the CLI, the dashboard, or chat — is persisted here
+  (`pipeline._persist_investigation`), not just written to `out/*.json`.
+- **`get_investigation(id)`**: reads one row from that table. Not a live
+  query — a read of a result a deterministic pipeline run already validated.
+- **`drill_deeper(id, dimension, value)`**: goes one level deeper into a
+  named segment, but reuses that investigation's own baseline/current date
+  window — it cannot be pointed at a different date range or a fresh
+  dataset-wide scan.
+- **The `RCA Follow-up` agent has only these two tools attached** — not
+  `scan_for_incidents`/`investigate_incident` (which could start a fresh,
+  broader investigation) and not the `clickhouse` MCP server at all. This is
+  enforced by the agent's own tool list, not a system-prompt instruction the
+  model could ignore: LibreChat's Agent composer shows no MCP-server toggle
+  for this agent, because none beyond its two fixed tools are attached.
+
+**Setting it up:** the agent already exists in this deployment
+(`LIBRECHAT_FOLLOWUP_AGENT_ID` in `.env`). To recreate it elsewhere,
+`librechat/create_followup_agent.py` drives the LibreChat UI with Playwright
+end to end (`pip install playwright && playwright install chromium`, then
+`python create_followup_agent.py`) and prints the new agent id to put in
+`.env`. LibreChat's agent-creation endpoint rejects a plain HTTP client even
+with valid auth (an origin/CSRF guard beyond simple headers), so this drives
+the real UI rather than calling the API directly. If a future LibreChat UI
+update breaks its selectors, recreate it by hand in ~2 minutes instead: Agent
+Builder → name it, pick model **Google → gemini-flash-lite-latest** → open
+Tools → Add → click the small **Configure** (gear) icon on the
+`rca-investigator` card (not the card itself, which selects all its tools) →
+check only `get_investigation` and `drill_deeper` → Create → copy the new
+`agent_...` id from the agent picker into `.env`.
+
 ## Project layout
 
 ```
-sql/ddl.sql            table definitions (raw + denormalized fact_events)
+sql/ddl.sql            table definitions (raw + denormalized fact_events + investigations)
 sql/build_fact.sql      one-time join that builds fact_events
 scripts/load_data.sh    idempotent full data load (Cloud or local)
 src/rca/metrics.py      metric + dimension definitions (matches metrics_glossary.md exactly)
@@ -102,7 +219,12 @@ src/rca/attribution.py  revenue decomposition + Adtributor-style segment ranking
 src/rca/narrate.py      the one LLM call (Gemini), strictly grounded in computed numbers
 src/rca/tracing.py      local JSON trace + Langfuse mirroring
 src/rca/pipeline.py     orchestrates detect -> decompose -> drill-down -> narrate
-src/rca/cli.py          `rca scan|investigate|auto`
+src/rca/cli.py          `rca scan|investigate|auto|serve|mcp-serve`
+src/rca/web.py          dashboard/incident-report API (FastAPI) + static file serving
+src/rca/webapp/         dashboard homepage + incident detail page (vanilla HTML/JS/SVG)
+src/rca/mcp_server.py   MCP tools wrapping the pipeline (incl. the scoped get_investigation/drill_deeper)
+librechat/              LibreChat stack: docker-compose.yml + librechat.yaml (MCP + Gemini wiring)
+librechat/create_followup_agent.py   one-time setup for the scoped "RCA Follow-up" agent
 traces/                 per-investigation trace trees (local, always written)
 out/                    per-investigation JSON results (diagnosis + full evidence)
 ```
@@ -125,3 +247,12 @@ out/                    per-investigation JSON results (diagnosis + full evidenc
   existing traffic. `drill_down` returns `primary = None` in that case, and
   the narration says the drop was broad-based rather than naming whichever
   segment happened to be largest.
+- **`vertical`/`campaign_type` are excluded from the drill-down for
+  `requests`/`fill_rate`.** They're advertiser attributes — `''` until a
+  request is filled (per `metrics_glossary.md`) — so grouping the pre-fill
+  population by them produces a phantom "segment" (all unfilled traffic) with
+  a rate structurally fixed at 0, which briefly showed up as a fabricated
+  high-lift "finding" during testing. `attribution.dimensions_for_factor`
+  fixes this by construction rather than filtering it post hoc; those two
+  dimensions stay in scope for render_rate/ctr/ecpm/revenue, where every row
+  in view is already filled.

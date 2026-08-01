@@ -23,4 +23,4 @@ dependencies = [
 rca = "rca.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/rca"]
+packages = ["rca"]

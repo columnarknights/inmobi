@@ -4,11 +4,11 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
-# Load .env from the project root (two levels up from this file), not from
-# whatever directory the process happens to be launched from — dotenv_values()
-# with no path only checks the current working directory, which silently
-# finds nothing if `rca` is invoked from outside the project root.
-_ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
+# Load .env from the project root (implementation/, one level up from this
+# package), not from whatever directory the process happens to be launched
+# from — dotenv_values() with no path only checks the current working
+# directory, which silently finds nothing if `rca` is invoked from elsewhere.
+_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
 # Values from this project's own .env take priority over whatever is already
 # in the ambient shell environment (rather than dotenv's usual default of
