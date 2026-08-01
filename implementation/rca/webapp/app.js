@@ -79,10 +79,6 @@ async function init() {
   await Promise.all([loadChart(), loadIncidents()]);
 }
 
-async function loadTiles() {
-  // Populated from the currently loaded chart series (see renderChart).
-}
-
 async function loadChart() {
   const svg = document.getElementById("chart");
   const data = await fetchJSON(
@@ -97,23 +93,39 @@ function renderTiles(points, metric) {
   tiles.innerHTML = "";
   if (!points.length) return;
   const last = points[points.length - 1];
-  const first = points[0];
+  const prev = points.length > 1 ? points[points.length - 2] : null;
   const total = points.reduce((s, p) => s + p.value, 0);
   const avg = total / points.length;
   const anomalyCount = points.filter((p) => p.is_anomaly).length;
 
+  let latestDelta = null, latestDeltaClass = "";
+  if (prev && prev.value) {
+    latestDelta = ((last.value - prev.value) / Math.abs(prev.value)) * 100;
+    latestDeltaClass = latestDelta >= 0 ? "up" : "down";
+  }
+
   const tileDefs = [
-    { label: `Latest ${METRIC_LABELS[metric] || metric}`, value: fmtNumber(last.value), sub: last.date },
-    { label: `Period average`, value: fmtNumber(avg), sub: `${points.length} days` },
-    { label: `Anomalous days`, value: String(anomalyCount), sub: anomalyCount ? "flagged vs baseline" : "none flagged" },
+    {
+      label: `Latest ${METRIC_LABELS[metric] || metric}`, value: fmtNumber(last.value),
+      sub: latestDelta === null ? last.date : `${latestDelta >= 0 ? "+" : ""}${latestDelta.toFixed(1)}% vs prior day`,
+      deltaClass: latestDeltaClass, accent: "",
+    },
+    { label: `Period average`, value: fmtNumber(avg), sub: `${points.length} days`, deltaClass: "", accent: "" },
+    {
+      label: `Anomalous days`, value: String(anomalyCount),
+      sub: anomalyCount ? "flagged vs baseline" : "none flagged — looks stable",
+      deltaClass: "", accent: anomalyCount ? "accent-alert" : "accent-ok",
+    },
   ];
   tileDefs.forEach((t) => {
     const el = document.createElement("div");
-    el.className = "tile";
+    el.className = "tile" + (t.accent ? ` ${t.accent}` : "");
     el.innerHTML = `<div class="label"></div><div class="value"></div><div class="delta"></div>`;
     el.querySelector(".label").textContent = t.label;
     el.querySelector(".value").textContent = t.value;
-    el.querySelector(".delta").textContent = t.sub;
+    const deltaEl = el.querySelector(".delta");
+    deltaEl.textContent = t.sub;
+    if (t.deltaClass) deltaEl.classList.add(t.deltaClass);
     tiles.appendChild(el);
   });
 }
@@ -127,6 +139,18 @@ function renderChart(svg, points, metric) {
 
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.innerHTML = "";
+
+  const legend = document.getElementById("chart-legend");
+  const hasDown = points.some((p) => p.is_anomaly && p.rel_delta < 0);
+  const hasUp = points.some((p) => p.is_anomaly && p.rel_delta >= 0);
+  if (hasDown || hasUp) {
+    legend.style.display = "flex";
+    legend.innerHTML = "";
+    if (hasDown) legend.innerHTML += `<span class="legend-item"><span class="dot down"></span>Anomaly (drop)</span>`;
+    if (hasUp) legend.innerHTML += `<span class="legend-item"><span class="dot up"></span>Anomaly (spike)</span>`;
+  } else {
+    legend.style.display = "none";
+  }
 
   if (!points.length) {
     const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -279,20 +303,22 @@ async function loadIncidents() {
   }
   data.incidents.forEach((inc) => {
     const a = document.createElement("a");
-    a.className = "incident-card";
-    a.href = `incident.html?id=${encodeURIComponent(inc.id)}`;
     const primary = inc.primary_segment;
+    a.className = "incident-card" + (primary ? " localized" : "");
+    a.href = `incident.html?id=${encodeURIComponent(inc.id)}`;
     const badgeClass = primary ? "localized" : "broad";
-    const badgeText = primary ? `${primary.dimension}=${primary.value}` : "broad-based";
+    const badgeText = primary ? `${primary.dimension} = ${primary.value}` : "Broad-based";
     a.innerHTML = `
       <div class="row1">
-        <span class="badge metric"></span>
-        <span class="window"></span>
+        <div class="row1-left">
+          <span class="metric-name"></span>
+          <span class="window"></span>
+        </div>
         <span class="badge ${badgeClass}"></span>
       </div>
       <p class="narrative-snippet"></p>
     `;
-    a.querySelector(".badge.metric").textContent = METRIC_LABELS[inc.metric] || inc.metric;
+    a.querySelector(".metric-name").textContent = METRIC_LABELS[inc.metric] || inc.metric;
     a.querySelector(".window").textContent = `${inc.current_window[0]} .. ${inc.current_window[1]}`;
     a.querySelector(`.badge.${badgeClass}`).textContent = badgeText;
     a.querySelector(".narrative-snippet").textContent = (inc.narrative || "").slice(0, 220) + (inc.narrative && inc.narrative.length > 220 ? "…" : "");
@@ -300,17 +326,29 @@ async function loadIncidents() {
   });
 }
 
+function showToast(message, type) {
+  const container = document.getElementById("toast-container");
+  const t = document.createElement("div");
+  t.className = "toast" + (type ? ` ${type}` : "");
+  t.textContent = message;
+  container.appendChild(t);
+  setTimeout(() => {
+    t.classList.add("fade-out");
+    setTimeout(() => t.remove(), 200);
+  }, 4000);
+}
+
 async function runScan() {
   const btn = document.getElementById("scan-btn");
   btn.disabled = true;
-  btn.textContent = "Scanning…";
+  btn.innerHTML = `<span class="spinner"></span>Scanning…`;
   try {
     const data = await fetchJSON(`${API}/api/scan?start=${state.start}&end=${state.end}`);
     if (!data.incidents.length) {
-      alert("No anomalies detected in this range.");
+      showToast("No anomalies detected in this range.", "success");
       return;
     }
-    btn.textContent = `Investigating ${data.incidents.length} incident(s)…`;
+    btn.innerHTML = `<span class="spinner"></span>Investigating ${data.incidents.length} incident(s)…`;
     for (const inc of data.incidents) {
       const res = await fetch(
         `${API}/api/investigate?metric=${inc.metric}&start=${inc.start}&end=${inc.end}`,
@@ -319,8 +357,9 @@ async function runScan() {
       if (!res.ok) console.error("investigate failed", inc, await res.text());
     }
     await loadIncidents();
+    showToast(`Investigated ${data.incidents.length} incident(s) — see the list below.`, "success");
   } catch (e) {
-    alert("Scan failed: " + e.message);
+    showToast("Scan failed: " + e.message, "error");
   } finally {
     btn.disabled = false;
     btn.textContent = "Scan for incidents";

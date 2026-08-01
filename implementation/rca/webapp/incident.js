@@ -20,6 +20,18 @@ function el(tag, cls, text) {
   return e;
 }
 
+function showToast(message, type) {
+  const container = document.getElementById("toast-container");
+  const t = document.createElement("div");
+  t.className = "toast" + (type ? ` ${type}` : "");
+  t.textContent = message;
+  container.appendChild(t);
+  setTimeout(() => {
+    t.classList.add("fade-out");
+    setTimeout(() => t.remove(), 200);
+  }, 4000);
+}
+
 async function setupFollowupButton(id, metricLabel, data) {
   const btn = document.getElementById("followup-btn");
   try {
@@ -38,6 +50,7 @@ async function setupFollowupButton(id, metricLabel, data) {
     });
   } catch (e) {
     console.error("Follow-up button setup failed:", e);
+    showToast("Couldn't set up follow-up chat: " + e.message, "error");
   }
 }
 

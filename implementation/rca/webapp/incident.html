@@ -10,6 +10,13 @@
   <div class="app">
     <header class="topbar">
       <div>
+        <div class="brand-row" style="margin-bottom:10px;">
+          <svg class="brand-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect width="24" height="24" rx="6" fill="var(--series-1)"/>
+            <path d="M5 13.5l3-3.5 3 4 4-7.5 4 3.5" stroke="white" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="brand-name">Root-Cause Analyst</span>
+        </div>
         <a class="back" href="index.html">&larr; Back to dashboard</a>
         <h1 id="title" style="margin-top:6px;">Loading…</h1>
         <div class="sub" id="sub"></div>
@@ -33,6 +40,7 @@
       <div id="drill-tree"></div>
     </section>
   </div>
+  <div class="toast-container" id="toast-container"></div>
   <script src="incident.js"></script>
 </body>
 </html>
