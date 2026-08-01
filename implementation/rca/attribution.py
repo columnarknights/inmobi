@@ -87,6 +87,30 @@ def factors_from_agg(agg: dict) -> dict:
     }
 
 
+def metric_rel_delta(metric: str, decomp: dict) -> float | None:
+    """The metric's own relative move vs baseline, whichever metric was
+    actually under investigation -- revenue_rel_delta alone only reflects
+    the revenue anomaly itself, which understates (or misses) the move for
+    a ctr/fill_rate/etc. incident where revenue barely changed, and
+    factor_rel_deltas only covers the four revenue factors, so a directly-
+    investigated metric like ctr needs the plain baseline/current
+    computation. Takes the serialized decomposition dict (baseline_factors/
+    current_factors/revenue_rel_delta/factor_rel_deltas keys), so the same
+    function works whether called from a live pipeline run (pipeline._build_
+    payload's "revenue_decomposition") or a saved investigation's
+    "decomposition" -- same shape, different key name one level up.
+    """
+    if metric == "revenue":
+        return decomp.get("revenue_rel_delta")
+    factor_rel_deltas = decomp.get("factor_rel_deltas") or {}
+    if metric in factor_rel_deltas:
+        return factor_rel_deltas[metric]
+    baseline_factors = decomp.get("baseline_factors") or {}
+    current_factors = decomp.get("current_factors") or {}
+    b, c = baseline_factors.get(metric), current_factors.get(metric)
+    return (c - b) / b if b else None
+
+
 def _log_mean(a: float, b: float) -> float | None:
     if a == b:
         return a

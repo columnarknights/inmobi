@@ -2,13 +2,24 @@
 JSON object built entirely from ClickHouse aggregate results (see
 pipeline._build_payload) and is instructed to narrate strictly from those
 numbers, never to compute or invent new ones.
+
+Bounded by a hard timeout (settings.narrate_timeout_seconds): free-tier rate-
+limit retries can otherwise push this one call's tail latency to ~80s (see
+rca/latency.py's measured p99), which would make the *diagnosis* dependent on
+the one non-deterministic, rate-limited part of an otherwise fast, all-
+ClickHouse pipeline. Past the timeout, narrate() falls back to a deterministic,
+template-built summary from the same payload -- every number in it already
+existed before the LLM was ever called, so a diagnosis is always returned
+within the bound regardless of what the LLM does.
 """
 
+import concurrent.futures
 import json
 
 from google import genai
 from google.genai import types
 
+from . import attribution
 from .config import settings
 from .tracing import Tracer
 
@@ -39,12 +50,75 @@ Rules:
 """
 
 
+def _segment_chain(drill_down: dict) -> list[dict]:
+    chain = []
+    level = drill_down
+    while level and level.get("primary_segment"):
+        chain.append(level["primary_segment"])
+        level = level.get("deeper")
+    return chain
+
+
+def _fallback_narrative(payload: dict) -> str:
+    """Template-built summary from the same numbers the LLM would have
+    narrated, used when narrate() times out or the call otherwise fails.
+    Deliberately labeled as auto-generated rather than passed off as the
+    LLM's own phrasing -- "Honest" applies to the system's own behavior,
+    not just the numbers it cites."""
+    anomaly = payload["anomaly"]
+    decomp = payload["revenue_decomposition"]
+    drill = payload["drill_down"]
+    metric = anomaly["metric"]
+    metric_label = metric.replace("_", " ")
+
+    rel = attribution.metric_rel_delta(metric, decomp)
+    if rel is None:
+        lines = [f"{metric_label.capitalize()} moved outside its expected baseline "
+                 f"({anomaly['current_window'][0]} to {anomaly['current_window'][1]})."]
+    else:
+        direction = "increased" if rel >= 0 else "decreased"
+        lines = [f"{metric_label.capitalize()} {direction} by {abs(rel) * 100:.1f}% "
+                 f"({anomaly['current_window'][0]} to {anomaly['current_window'][1]}, "
+                 f"vs baseline {anomaly['baseline_window'][0]} to {anomaly['baseline_window'][1]})."]
+
+    drill_factor = drill.get("factor")
+    if drill_factor and drill_factor != metric:
+        contributions = decomp.get("factor_contributions_to_revenue_delta") or {}
+        revenue_delta = decomp.get("revenue_delta") or 0
+        contrib = contributions.get(drill_factor)
+        if contrib is not None and revenue_delta:
+            pct_of_total = abs(contrib / revenue_delta) * 100
+            lines.append(f"LMDI decomposition attributes {pct_of_total:.0f}% of the "
+                         f"revenue movement to {drill_factor.replace('_', ' ')}.")
+
+    chain = _segment_chain(drill)
+    if chain:
+        path = " -> ".join(f"{s['dimension']}={s['value']}" for s in chain)
+        last = chain[-1]
+        lines.append(
+            f"Drill-down localizes this to {path}, explaining "
+            f"{last['explanatory_power'] * 100:.0f}% of the movement at that level "
+            f"with a lift of {last['lift']:.1f}x over its size."
+        )
+    else:
+        lines.append(
+            "Drill-down found no single segment disproportionately responsible -- "
+            "the movement was broad-based, proportional to segment size across every dimension checked."
+        )
+
+    lines.append(
+        "[Auto-generated summary — LLM narration was unavailable or timed out; every "
+        "figure above is the same deterministic computation the full narrative would have used.]"
+    )
+    return " ".join(lines)
+
+
 def narrate(payload: dict, tracer: Tracer) -> str:
     client = genai.Client(api_key=settings.gemini_api_key)
     user_content = json.dumps(payload, indent=2, default=str)
 
-    with tracer.span("narrate", input=payload, as_type="generation", model=settings.gemini_model) as span:
-        response = client.models.generate_content(
+    def _call():
+        return client.models.generate_content(
             model=settings.gemini_model,
             contents=user_content,
             config=types.GenerateContentConfig(
@@ -58,6 +132,23 @@ def narrate(payload: dict, tracer: Tracer) -> str:
                 thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.MINIMAL),
             ),
         )
-        text = response.text
-        span.set_output(text)
-        return text
+
+    with tracer.span("narrate", input=payload, as_type="generation", model=settings.gemini_model) as span:
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(_call)
+        try:
+            response = future.result(timeout=settings.narrate_timeout_seconds)
+            text = response.text
+            span.set_output(text)
+            return text
+        except Exception as e:
+            text = _fallback_narrative(payload)
+            span.set_output({"fallback_reason": str(e), "narrative": text})
+            return text
+        finally:
+            # wait=False: don't block here on a call we've already given up on
+            # (e.g. still retrying inside the SDK past our own timeout) -- that
+            # would silently reintroduce the exact tail latency this is meant
+            # to bound. The orphaned thread finishes or errors on its own;
+            # nothing here depends on its result once we've moved on.
+            executor.shutdown(wait=False)

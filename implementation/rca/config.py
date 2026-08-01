@@ -35,6 +35,13 @@ class Settings:
 
     gemini_api_key: str = _get("GEMINI_API_KEY", "")
     gemini_model: str = _get("GEMINI_MODEL", "gemini-flash-lite-latest")
+    # Hard ceiling on the one LLM call in the pipeline. Measured free-tier
+    # rate-limit retries can otherwise push this stage's tail latency to
+    # ~80s (see rca/latency.py); past this many seconds, narrate() gives up
+    # and returns a deterministic, template-based summary instead -- every
+    # number in it already existed before the LLM was ever called, so the
+    # diagnosis is never blocked on the one non-deterministic dependency.
+    narrate_timeout_seconds: float = float(_get("NARRATE_TIMEOUT_SECONDS", "8"))
 
     langfuse_public_key: str = _get("LANGFUSE_PUBLIC_KEY", "")
     langfuse_secret_key: str = _get("LANGFUSE_SECRET_KEY", "")
