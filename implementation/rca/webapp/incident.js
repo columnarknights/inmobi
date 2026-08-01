@@ -34,36 +34,9 @@ function showToast(message, type) {
   }, 4000);
 }
 
-// Same derivation as the dashboard list (app.js) -- severity/confidence are
-// not pipeline outputs, they're computed here from real numbers the pipeline
-// already produced. Kept in sync deliberately; see app.js for the same logic.
-function metricRelDelta(data) {
-  const d = data.decomposition;
-  if (data.metric === "revenue") return d.revenue_rel_delta;
-  if (d.factor_rel_deltas && data.metric in d.factor_rel_deltas) return d.factor_rel_deltas[data.metric];
-  const b = d.baseline_factors[data.metric], c = d.current_factors[data.metric];
-  return b ? (c - b) / b : null;
-}
-function severityFor(relDelta) {
-  if (relDelta === null || relDelta === undefined) return "medium";
-  const abs = Math.abs(relDelta);
-  if (abs >= 0.15) return "high";
-  if (abs >= 0.05) return "medium";
-  return "low";
-}
-function segmentChainOf(drillDown) {
-  const chain = [];
-  let level = drillDown;
-  while (level && level.primary_segment) {
-    chain.push(level.primary_segment);
-    level = level.deeper;
-  }
-  return chain;
-}
-function confidenceFor(chain) {
-  if (!chain.length) return null;
-  return Math.round(chain[chain.length - 1].explanatory_power * 100);
-}
+// metric_rel_delta/segment_chain/severity/confidence all come straight from
+// the API now (web.py: _derive_fields) -- computed once, server-side, so this
+// page and the dashboard list can't drift out of sync with each other.
 function confidenceRing(pct, size) {
   size = size || 30;
   const r = size / 2 - 3, c = 2 * Math.PI * r;
@@ -139,10 +112,10 @@ async function main() {
   const data = await res.json();
 
   const metricLabel = METRIC_LABELS[data.metric] || data.metric;
-  const relDelta = metricRelDelta(data);
-  const sev = severityFor(relDelta);
-  const chain = segmentChainOf(data.drill_down);
-  const conf = confidenceFor(chain);
+  const relDelta = data.metric_rel_delta;
+  const sev = data.severity;
+  const chain = data.segment_chain || [];
+  const conf = data.confidence;
 
   document.title = `${metricLabel} ${data.current_window[0]}..${data.current_window[1]} — Incident`;
   document.getElementById("title").textContent = `${metricLabel} ${relDelta >= 0 ? "Spike" : "Drop"}`;
@@ -231,7 +204,7 @@ function renderWhy(data, metricLabel, chain, nodes, index) {
 
   if (node.kind === "metric") {
     const b = decomp.baseline_factors[data.metric], c = decomp.current_factors[data.metric];
-    const rel = metricRelDelta(data);
+    const rel = data.metric_rel_delta;
     stats = [
       [`Baseline ${metricLabel}`, fmtNumber(b)],
       [`Current ${metricLabel}`, fmtNumber(c)],
@@ -278,9 +251,14 @@ function renderWhy(data, metricLabel, chain, nodes, index) {
     const level = levelAtDepth(data.drill_down, node.levelIndex);
     const dims = (level && level.dimensions_checked) || {};
     const totalChecked = Object.values(dims).reduce((n, d) => n + (d.top_segments || []).length, 0);
+    // Every segment in a segment_chain already cleared the pipeline's lift
+    // bar server-side to be named `primary_segment` (attribution.py's
+    // lift_thresh) -- so this is always "far more than", never the other
+    // branch. Phrased as a plain statement rather than re-testing a threshold
+    // that's already been applied.
     reasons = [
       `${seg.value} explains ${fmtPct(seg.explanatory_power)} of the movement at this level.`,
-      `Lift of ${seg.lift.toFixed(1)}× — ${seg.lift >= 1.8 ? "far more than" : "roughly in line with"} its size would predict.`,
+      `Lift of ${seg.lift.toFixed(1)}× — far more than its size would predict.`,
       `${totalChecked} segment(s) across ${Object.keys(dims).length} dimension(s) were checked at this level.`,
     ];
   }
@@ -328,8 +306,7 @@ function renderFactors(decomp) {
 function renderEvidence(data, metricLabel, chain) {
   const decomp = data.decomposition;
   const rows = [];
-  const relDelta = metricRelDelta(data);
-  rows.push([metricLabel, decomp.baseline_factors[data.metric], decomp.current_factors[data.metric], relDelta]);
+  rows.push([metricLabel, decomp.baseline_factors[data.metric], decomp.current_factors[data.metric], data.metric_rel_delta]);
 
   if (data.drill_factor && data.drill_factor !== data.metric) {
     const fLabel = METRIC_LABELS[data.drill_factor] || data.drill_factor;

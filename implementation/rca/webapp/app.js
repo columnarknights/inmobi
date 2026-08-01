@@ -49,24 +49,8 @@ async function fetchJSON(url) {
   return res.json();
 }
 
-// Neither "severity" nor "confidence" are fields the pipeline computes --
-// they're derived here from real numbers the pipeline already produced
-// (metric_rel_delta, and the deepest segment's own explanatory_power), never
-// invented. Broad-based incidents (empty segment_chain) get no confidence
-// number at all rather than a fabricated one.
-function severityFor(relDelta) {
-  if (relDelta === null || relDelta === undefined) return "medium";
-  const abs = Math.abs(relDelta);
-  if (abs >= 0.15) return "high";
-  if (abs >= 0.05) return "medium";
-  return "low";
-}
-
-function confidenceFor(segmentChain) {
-  if (!segmentChain || !segmentChain.length) return null;
-  return Math.round(segmentChain[segmentChain.length - 1].explanatory_power * 100);
-}
-
+// severity/confidence are computed once, server-side (web.py: _severity_for /
+// _confidence_for) from real numbers -- every incident already carries them.
 function confidenceRing(pct, size) {
   size = size || 26;
   const r = size / 2 - 3, c = 2 * Math.PI * r;
@@ -368,7 +352,7 @@ function renderChart(svg, points, metric) {
 function renderIncidentKPIs(incidents) {
   const tiles = document.getElementById("tiles");
   tiles.innerHTML = "";
-  const highCount = incidents.filter((i) => severityFor(i.metric_rel_delta) === "high").length;
+  const highCount = incidents.filter((i) => i.severity === "high").length;
   const metricsAffected = new Set(incidents.map((i) => i.metric)).size;
   let biggest = null;
   incidents.forEach((i) => {
@@ -455,16 +439,15 @@ function renderIncidentList() {
   const list = document.getElementById("incident-list");
   list.innerHTML = "";
 
-  let items = state.incidents.filter((i) => {
-    const sev = severityFor(i.metric_rel_delta);
-    return (state.filterMetric === "all" || i.metric === state.filterMetric) &&
-      (state.filterSeverity === "all" || sev === state.filterSeverity);
-  });
+  let items = state.incidents.filter((i) =>
+    (state.filterMetric === "all" || i.metric === state.filterMetric) &&
+    (state.filterSeverity === "all" || i.severity === state.filterSeverity)
+  );
   const sevRank = { high: 0, medium: 1, low: 2 };
   if (state.sort === "severity") {
-    items = items.slice().sort((a, b) => sevRank[severityFor(a.metric_rel_delta)] - sevRank[severityFor(b.metric_rel_delta)]);
+    items = items.slice().sort((a, b) => sevRank[a.severity] - sevRank[b.severity]);
   } else if (state.sort === "confidence") {
-    items = items.slice().sort((a, b) => (confidenceFor(b.segment_chain) || 0) - (confidenceFor(a.segment_chain) || 0));
+    items = items.slice().sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
   }
 
   if (!state.incidents.length) {
@@ -477,8 +460,8 @@ function renderIncidentList() {
   }
 
   items.forEach((inc) => {
-    const sev = severityFor(inc.metric_rel_delta);
-    const conf = confidenceFor(inc.segment_chain);
+    const sev = inc.severity;
+    const conf = inc.confidence;
     const rootCause = inc.segment_chain && inc.segment_chain.length
       ? inc.segment_chain.map((s) => `${s.dimension} = ${s.value}`).join(" → ")
       : "Broad-based";

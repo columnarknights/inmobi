@@ -107,6 +107,34 @@ def investigate(metric: str, start: str, end: str, max_depth: int = 2):
     return result
 
 
+# Severity/confidence aren't pipeline outputs -- the pipeline computes
+# explanatory_power/lift per segment, not a single per-incident verdict. These
+# are a presentation-layer judgment call on top of those real numbers, made
+# ONCE here so every page (list, detail) reads the same value instead of each
+# frontend file re-deriving its own copy with its own thresholds.
+_SEVERITY_HIGH = 0.15
+_SEVERITY_MEDIUM = 0.05
+
+
+def _severity_for(metric_rel_delta: float | None) -> str:
+    if metric_rel_delta is None:
+        return "medium"
+    abs_delta = abs(metric_rel_delta)
+    if abs_delta >= _SEVERITY_HIGH:
+        return "high"
+    if abs_delta >= _SEVERITY_MEDIUM:
+        return "medium"
+    return "low"
+
+
+def _confidence_for(segment_chain: list[dict]) -> int | None:
+    """None (not 0) for a broad-based incident -- there's no cause to be
+    confident about, which is a different thing from being confident it's 0%."""
+    if not segment_chain:
+        return None
+    return round(segment_chain[-1]["explanatory_power"] * 100)
+
+
 def _segment_chain(drill_down: dict | None) -> list[dict]:
     """Walks primary_segment -> deeper -> primary_segment ... to the point the
     drill-down actually stopped localizing further. Empty if broad-based."""
@@ -118,9 +146,9 @@ def _segment_chain(drill_down: dict | None) -> list[dict]:
     return chain
 
 
-def _summarize_incident_file(path: Path) -> dict:
-    with open(path) as f:
-        data = json.load(f)
+def _derive_fields(data: dict) -> dict:
+    """Everything the frontend needs that isn't already a direct pipeline
+    field, computed once here instead of duplicated across app.js/incident.js."""
     metric = data.get("metric")
     decomp = data.get("decomposition") or {}
     baseline_factors = decomp.get("baseline_factors") or {}
@@ -142,19 +170,30 @@ def _summarize_incident_file(path: Path) -> dict:
 
     chain = _segment_chain(data.get("drill_down"))
     return {
-        "id": path.name,
-        "metric": metric,
-        "current_window": data.get("current_window"),
-        "baseline_window": data.get("baseline_window"),
-        "revenue_rel_delta": decomp.get("revenue_rel_delta"),
-        "revenue_delta": decomp.get("revenue_delta"),
         "metric_rel_delta": metric_rel_delta,
         "metric_baseline": baseline_factors.get(metric),
         "metric_current": current_factors.get(metric),
         "primary_segment": chain[0] if chain else None,
         "segment_chain": chain,
+        "severity": _severity_for(metric_rel_delta),
+        "confidence": _confidence_for(chain),
+    }
+
+
+def _summarize_incident_file(path: Path) -> dict:
+    with open(path) as f:
+        data = json.load(f)
+    decomp = data.get("decomposition") or {}
+    return {
+        "id": path.name,
+        "metric": data.get("metric"),
+        "current_window": data.get("current_window"),
+        "baseline_window": data.get("baseline_window"),
+        "revenue_rel_delta": decomp.get("revenue_rel_delta"),
+        "revenue_delta": decomp.get("revenue_delta"),
         "narrative": data.get("narrative"),
         "langfuse_trace_url": data.get("langfuse_trace_url"),
+        **_derive_fields(data),
     }
 
 
@@ -172,7 +211,9 @@ def get_incident(incident_id: str):
     if not path.exists() or path.parent != OUT_DIR:
         raise HTTPException(404, "Not found")
     with open(path) as f:
-        return json.load(f)
+        data = json.load(f)
+    data.update(_derive_fields(data))
+    return data
 
 
 @app.get("/api/latency")
