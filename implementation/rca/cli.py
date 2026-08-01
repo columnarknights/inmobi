@@ -18,6 +18,26 @@ def main():
 
 
 @main.command()
+@click.option("--host", default="127.0.0.1")
+@click.option("--port", type=int, default=8000)
+def serve(host, port):
+    """Run the dashboard + incident-report web app."""
+    import uvicorn
+
+    uvicorn.run("rca.web:app", host=host, port=port, reload=False)
+
+
+@main.command()
+@click.option("--host", default="0.0.0.0")
+@click.option("--port", type=int, default=8001)
+def mcp_serve(host, port):
+    """Run the MCP server exposing scan/investigate as tools (for LibreChat etc.)."""
+    from .mcp_server import mcp
+
+    mcp.run(transport="http", host=host, port=port, path="/mcp")
+
+
+@main.command()
 @click.option("--start", type=str, default=None, help="YYYY-MM-DD; defaults to the earliest date loaded")
 @click.option("--end", type=str, default=None, help="YYYY-MM-DD; defaults to the latest date loaded")
 @click.option("--metric", "metrics", multiple=True, help="Repeatable; defaults to revenue,fill_rate,ecpm,requests,ctr")

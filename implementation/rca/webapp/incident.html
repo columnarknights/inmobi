@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Incident detail — Root-Cause Analyst</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div>
+        <a class="back" href="index.html">&larr; Back to dashboard</a>
+        <h1 id="title" style="margin-top:6px;">Loading…</h1>
+        <div class="sub" id="sub"></div>
+      </div>
+    </header>
+
+    <div class="narrative-panel" id="narrative">Loading…</div>
+
+    <section>
+      <h2>Revenue identity decomposition</h2>
+      <div class="factor-grid" id="factor-grid"></div>
+    </section>
+
+    <section>
+      <h2>Drill-down</h2>
+      <div id="drill-tree"></div>
+    </section>
+  </div>
+  <script src="incident.js"></script>
+</body>
+</html>

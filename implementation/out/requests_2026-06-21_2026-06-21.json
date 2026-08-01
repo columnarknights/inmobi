@@ -246,135 +246,6 @@
         "n_segments_checked": 3,
         "n_excluded_low_volume": 0
       },
-      "vertical": {
-        "top_segments": [
-          {
-            "dimension": "vertical",
-            "value": "",
-            "explanatory_power": 0.215,
-            "lift": 1.0,
-            "volume_share_baseline": 0.2147,
-            "volume_share_current": 0.2145,
-            "rate_baseline": 48387.0,
-            "rate_current": 27033.0,
-            "requests_baseline": 48387.0,
-            "requests_current": 27033.0,
-            "ruled_out": false
-          },
-          {
-            "dimension": "vertical",
-            "value": "entertainment",
-            "explanatory_power": 0.171,
-            "lift": 1.0,
-            "volume_share_baseline": 0.1711,
-            "volume_share_current": 0.1715,
-            "rate_baseline": 38574.0,
-            "rate_current": 21612.0,
-            "requests_baseline": 38574.0,
-            "requests_current": 21612.0,
-            "ruled_out": false
-          },
-          {
-            "dimension": "vertical",
-            "value": "ecommerce",
-            "explanatory_power": 0.145,
-            "lift": 1.01,
-            "volume_share_baseline": 0.1444,
-            "volume_share_current": 0.1437,
-            "rate_baseline": 32551.0,
-            "rate_current": 18119.0,
-            "requests_baseline": 32551.0,
-            "requests_current": 18119.0,
-            "ruled_out": true
-          },
-          {
-            "dimension": "vertical",
-            "value": "auto",
-            "explanatory_power": 0.132,
-            "lift": 0.99,
-            "volume_share_baseline": 0.1326,
-            "volume_share_current": 0.1332,
-            "rate_baseline": 29897.0,
-            "rate_current": 16787.0,
-            "requests_baseline": 29897.0,
-            "requests_current": 16787.0,
-            "ruled_out": true
-          },
-          {
-            "dimension": "vertical",
-            "value": "finance",
-            "explanatory_power": 0.124,
-            "lift": 0.99,
-            "volume_share_baseline": 0.1248,
-            "volume_share_current": 0.1252,
-            "rate_baseline": 28118.0,
-            "rate_current": 15788.0,
-            "requests_baseline": 28118.0,
-            "requests_current": 15788.0,
-            "ruled_out": true
-          }
-        ],
-        "n_segments_checked": 8,
-        "n_excluded_low_volume": 0
-      },
-      "campaign_type": {
-        "top_segments": [
-          {
-            "dimension": "campaign_type",
-            "value": "CPM",
-            "explanatory_power": 0.477,
-            "lift": 1.0,
-            "volume_share_baseline": 0.4763,
-            "volume_share_current": 0.4757,
-            "rate_baseline": 107344.0,
-            "rate_current": 59969.0,
-            "requests_baseline": 107344.0,
-            "requests_current": 59969.0,
-            "ruled_out": false
-          },
-          {
-            "dimension": "campaign_type",
-            "value": "",
-            "explanatory_power": 0.215,
-            "lift": 1.0,
-            "volume_share_baseline": 0.2147,
-            "volume_share_current": 0.2145,
-            "rate_baseline": 48387.0,
-            "rate_current": 27033.0,
-            "requests_baseline": 48387.0,
-            "requests_current": 27033.0,
-            "ruled_out": false
-          },
-          {
-            "dimension": "campaign_type",
-            "value": "CPC",
-            "explanatory_power": 0.156,
-            "lift": 1.0,
-            "volume_share_baseline": 0.1556,
-            "volume_share_current": 0.1554,
-            "rate_baseline": 35067.0,
-            "rate_current": 19584.0,
-            "requests_baseline": 35067.0,
-            "requests_current": 19584.0,
-            "ruled_out": false
-          },
-          {
-            "dimension": "campaign_type",
-            "value": "CPI",
-            "explanatory_power": 0.152,
-            "lift": 0.99,
-            "volume_share_baseline": 0.1534,
-            "volume_share_current": 0.1544,
-            "rate_baseline": 34585.0,
-            "rate_current": 19466.0,
-            "requests_baseline": 34585.0,
-            "requests_current": 19466.0,
-            "ruled_out": false
-          }
-        ],
-        "n_segments_checked": 4,
-        "n_excluded_low_volume": 0
-      },
       "region": {
         "top_segments": [
           {
@@ -662,7 +533,7 @@
     },
     "primary_segment": null
   },
-  "narrative": "Revenue experienced a significant downturn, dropping by -194.77 or -0.4537, primarily driven by a sharp decrease in requests which fell by -187.22. Across all checked dimensions\u2014including ad format, category, publisher tier, vertical, campaign type, region, country, device model, and OS version\u2014the movement was broad-based and proportional, with no single localized primary segment identified. For instance, within ad formats, the banner segment recorded an explanatory power of 0.347 with a lift of 1.0, tracking precisely with overall volume trends. Segments such as the video ad format (lift 0.97, explanatory power 0.127) and the utility category (lift 0.96, explanatory power 0.114) were checked and duly ruled out as they did not exhibit disproportionate behavior.",
-  "local_trace_path": "traces/1785580527_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/f98a68681e98a41b7e00e37228d66ec9"
+  "narrative": "Revenue fell by -194.77 (-45.37%), driven primarily by a drop in requests, which contributed -187.22 to the decline. Across all checked dimensions including ad_format, category, publisher_tier, region, country, device_model, and os_version, no single primary segment caused the movement. Instead, the decline was broad-based and proportional across segments. For instance, within ad_format, the banner segment saw requests fall from 78513.0 to 44006.0 with a lift of 1.0, reflecting uniform volume contraction rather than a localized anomaly. Similarly, segments like video under ad_format with a lift of 0.97 and US under country with a lift of 0.99 were checked and ruled out due to lacking disproportionate explanatory power.",
+  "local_trace_path": "traces/1785584344_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/39d3db36c6ec349630c35b392439a861"
 }
