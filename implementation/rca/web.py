@@ -55,15 +55,15 @@ def timeseries(metric: str, start: str, end: str, lookback_weeks: int = 4):
     from datetime import timedelta
 
     series = baseline.daily_series(client, metric, start_d - timedelta(weeks=lookback_weeks), end_d)
-    anomalies = baseline.detect_anomalies(series, metric, lookback_weeks=lookback_weeks)
-    anomaly_by_date = {a.event_date: a for a in anomalies}
+    evaluations = baseline.evaluate_series(series, metric, lookback_weeks=lookback_weeks)
+    eval_by_date = {e.event_date: e for e in evaluations}
     points = [
         {
             "date": str(p.event_date),
             "value": p.value,
-            "is_anomaly": p.event_date in anomaly_by_date,
-            "baseline_expected": anomaly_by_date[p.event_date].baseline_median if p.event_date in anomaly_by_date else None,
-            "rel_delta": anomaly_by_date[p.event_date].rel_delta if p.event_date in anomaly_by_date else None,
+            "is_anomaly": eval_by_date[p.event_date].is_anomaly,
+            "baseline_expected": eval_by_date[p.event_date].baseline_expected,
+            "rel_delta": eval_by_date[p.event_date].rel_delta,
         }
         for p in series
         if p.event_date >= start_d
@@ -107,6 +107,50 @@ def investigate(metric: str, start: str, end: str, max_depth: int = 2):
     return result
 
 
+# Severity/confidence aren't pipeline outputs -- the pipeline computes
+# explanatory_power/lift per segment, not a single per-incident verdict. These
+# are a presentation-layer judgment call on top of those real numbers, made
+# ONCE here so every page (list, detail) reads the same value instead of each
+# frontend file re-deriving its own copy with its own thresholds.
+_SEVERITY_HIGH = 0.15
+_SEVERITY_MEDIUM = 0.05
+
+
+def _severity_for(metric_rel_delta: float | None) -> str:
+    if metric_rel_delta is None:
+        return "medium"
+    abs_delta = abs(metric_rel_delta)
+    if abs_delta >= _SEVERITY_HIGH:
+        return "high"
+    if abs_delta >= _SEVERITY_MEDIUM:
+        return "medium"
+    return "low"
+
+
+def _confidence_for(segment_chain: list[dict]) -> int | None:
+    """None (not 0) for a broad-based incident -- there's no cause to be
+    confident about, which is a different thing from being confident it's 0%.
+
+    Uses the ROOT level (segment_chain[0]), not the deepest one. explanatory_power
+    at depth > 0 is computed against the movement *within the parent segment's
+    filter* (attribution.rank_segments sums totals only from the filtered
+    `rows`), not against the original total -- so a deeper segment's EP isn't
+    comparable to a root-level EP from a different (shallower) incident. The
+    root level has no filter, so it's always a fraction of the true total
+    movement, and is the only one that's consistent across incidents regardless
+    of how deep any given drill-down happened to go.
+    """
+    if not segment_chain:
+        return None
+    # Raw explanatory_power can fall outside [0, 1] -- when some segments move
+    # opposite the overall trend, the ones moving with it can legitimately
+    # explain >100% of the net movement on their own (they're offset by the
+    # others). That's correct Adtributor math, but confusing as a displayed
+    # percentage, so it's clamped to a sane 0-100 range here.
+    pct = round(segment_chain[0]["explanatory_power"] * 100)
+    return max(0, min(100, pct))
+
+
 def _segment_chain(drill_down: dict | None) -> list[dict]:
     """Walks primary_segment -> deeper -> primary_segment ... to the point the
     drill-down actually stopped localizing further. Empty if broad-based."""
@@ -118,9 +162,9 @@ def _segment_chain(drill_down: dict | None) -> list[dict]:
     return chain
 
 
-def _summarize_incident_file(path: Path) -> dict:
-    with open(path) as f:
-        data = json.load(f)
+def _derive_fields(data: dict) -> dict:
+    """Everything the frontend needs that isn't already a direct pipeline
+    field, computed once here instead of duplicated across app.js/incident.js."""
     metric = data.get("metric")
     decomp = data.get("decomposition") or {}
     baseline_factors = decomp.get("baseline_factors") or {}
@@ -142,19 +186,30 @@ def _summarize_incident_file(path: Path) -> dict:
 
     chain = _segment_chain(data.get("drill_down"))
     return {
-        "id": path.name,
-        "metric": metric,
-        "current_window": data.get("current_window"),
-        "baseline_window": data.get("baseline_window"),
-        "revenue_rel_delta": decomp.get("revenue_rel_delta"),
-        "revenue_delta": decomp.get("revenue_delta"),
         "metric_rel_delta": metric_rel_delta,
         "metric_baseline": baseline_factors.get(metric),
         "metric_current": current_factors.get(metric),
         "primary_segment": chain[0] if chain else None,
         "segment_chain": chain,
+        "severity": _severity_for(metric_rel_delta),
+        "confidence": _confidence_for(chain),
+    }
+
+
+def _summarize_incident_file(path: Path) -> dict:
+    with open(path) as f:
+        data = json.load(f)
+    decomp = data.get("decomposition") or {}
+    return {
+        "id": path.name,
+        "metric": data.get("metric"),
+        "current_window": data.get("current_window"),
+        "baseline_window": data.get("baseline_window"),
+        "revenue_rel_delta": decomp.get("revenue_rel_delta"),
+        "revenue_delta": decomp.get("revenue_delta"),
         "narrative": data.get("narrative"),
         "langfuse_trace_url": data.get("langfuse_trace_url"),
+        **_derive_fields(data),
     }
 
 
@@ -172,7 +227,9 @@ def get_incident(incident_id: str):
     if not path.exists() or path.parent != OUT_DIR:
         raise HTTPException(404, "Not found")
     with open(path) as f:
-        return json.load(f)
+        data = json.load(f)
+    data.update(_derive_fields(data))
+    return data
 
 
 @app.get("/api/latency")

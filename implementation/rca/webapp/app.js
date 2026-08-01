@@ -49,24 +49,8 @@ async function fetchJSON(url) {
   return res.json();
 }
 
-// Neither "severity" nor "confidence" are fields the pipeline computes --
-// they're derived here from real numbers the pipeline already produced
-// (metric_rel_delta, and the deepest segment's own explanatory_power), never
-// invented. Broad-based incidents (empty segment_chain) get no confidence
-// number at all rather than a fabricated one.
-function severityFor(relDelta) {
-  if (relDelta === null || relDelta === undefined) return "medium";
-  const abs = Math.abs(relDelta);
-  if (abs >= 0.15) return "high";
-  if (abs >= 0.05) return "medium";
-  return "low";
-}
-
-function confidenceFor(segmentChain) {
-  if (!segmentChain || !segmentChain.length) return null;
-  return Math.round(segmentChain[segmentChain.length - 1].explanatory_power * 100);
-}
-
+// severity/confidence are computed once, server-side (web.py: _severity_for /
+// _confidence_for) from real numbers -- every incident already carries them.
 function confidenceRing(pct, size) {
   size = size || 26;
   const r = size / 2 - 3, c = 2 * Math.PI * r;
@@ -102,8 +86,12 @@ async function init() {
   startInput.addEventListener("change", () => { state.start = startInput.value; loadChart(); });
   endInput.addEventListener("change", () => { state.end = endInput.value; loadChart(); });
 
+  // Chart tabs: only the 3 metrics with full revenue-identity drill-down
+  // support (requests/ctr still get investigated and show up as real
+  // incidents in the list below -- just not offered as a chart tab, to keep
+  // the demo's headline surface simple).
   const tabsEl = document.getElementById("metric-tabs");
-  ["revenue", "fill_rate", "ecpm", "requests", "ctr"].forEach((m) => {
+  ["revenue", "fill_rate", "ecpm"].forEach((m) => {
     const btn = document.createElement("button");
     btn.className = "tab" + (m === state.metric ? " active" : "");
     btn.textContent = METRIC_LABELS[m] || m;
@@ -120,66 +108,7 @@ async function init() {
   document.getElementById("scan-btn").addEventListener("click", runScan);
   setupFilterMenus();
 
-  await Promise.all([loadChart(), loadIncidents(), loadLatency()]);
-}
-
-function fmtSeconds(v) {
-  return v === null || v === undefined ? "—" : `${v.toFixed(v < 10 ? 2 : 1)}s`;
-}
-
-async function loadLatency() {
-  const section = document.getElementById("latency-section");
-  let report;
-  try {
-    report = await fetchJSON(`${API}/api/latency`);
-  } catch (e) {
-    return; // no traces yet — leave the section hidden
-  }
-  const inv = report.investigate.end_to_end;
-  if (!inv.n) return;
-  section.style.display = "";
-
-  const pipe = report.investigate.pipeline_only;
-  const llm = report.investigate.narrate_only;
-  const maxP95 = Math.max(pipe.p95 || 0, llm.p95 || 0, 1e-9);
-
-  const card = document.getElementById("latency-card");
-  card.innerHTML = "";
-
-  const headline = el("div", "latency-headline");
-  [["p50", inv.p50], ["p95", inv.p95], ["p99", inv.p99]].forEach(([label, v]) => {
-    const stat = el("div", "latency-stat");
-    stat.appendChild(el("div", "latency-stat-label", label));
-    stat.appendChild(el("div", "latency-stat-value", fmtSeconds(v)));
-    headline.appendChild(stat);
-  });
-  const nEl = el("div", "latency-n", `across ${inv.n} real investigation${inv.n === 1 ? "" : "s"}`);
-  headline.appendChild(nEl);
-  card.appendChild(headline);
-
-  const breakdown = el("div", "latency-breakdown");
-  const rows = [
-    { label: "ClickHouse detection + drill-down", stats: pipe, cls: "ch" },
-    { label: "LLM narration (phrasing only)", stats: llm, cls: "llm" },
-  ];
-  rows.forEach((r) => {
-    const row = el("div", "latency-row");
-    row.appendChild(el("span", "latency-row-label", r.label));
-    const track = el("div", "latency-bar-track");
-    const fill = el("div", `latency-bar-fill ${r.cls}`);
-    fill.style.width = `${Math.min(100, ((r.stats.p95 || 0) / maxP95) * 100)}%`;
-    track.appendChild(fill);
-    row.appendChild(track);
-    row.appendChild(el("span", "latency-row-value", `p95 ${fmtSeconds(r.stats.p95)} · p99 ${fmtSeconds(r.stats.p99)}`));
-    breakdown.appendChild(row);
-  });
-  card.appendChild(breakdown);
-
-  if (llm.p99 !== null && pipe.p99 !== null && llm.p99 > pipe.p99 * 2) {
-    card.appendChild(el("p", "latency-note",
-      `The ClickHouse-based detection and drill-down stay fast even in the worst case (p99 ${fmtSeconds(pipe.p99)}). ` +
-      `The occasional slow run comes from the LLM phrasing step retrying against the free-tier rate limit — not from the analysis itself.`));
-  }
+  await Promise.all([loadChart(), loadIncidents()]);
 }
 
 async function loadChart() {
@@ -220,14 +149,12 @@ function renderChart(svg, points, metric) {
   const legend = document.getElementById("chart-legend");
   const hasDown = points.some((p) => p.is_anomaly && p.rel_delta < 0);
   const hasUp = points.some((p) => p.is_anomaly && p.rel_delta >= 0);
-  if (hasDown || hasUp) {
-    legend.style.display = "flex";
-    legend.innerHTML = "";
-    if (hasDown) legend.innerHTML += `<span class="legend-item"><span class="dot down"></span>Anomaly (drop)</span>`;
-    if (hasUp) legend.innerHTML += `<span class="legend-item"><span class="dot up"></span>Anomaly (spike)</span>`;
-  } else {
-    legend.style.display = "none";
-  }
+  const hasBaseline = points.some((p) => p.baseline_expected !== null && p.baseline_expected !== undefined);
+  legend.innerHTML = "";
+  if (hasBaseline) legend.innerHTML += `<span class="legend-item"><span class="dot baseline"></span>Baseline (expected)</span>`;
+  if (hasDown) legend.innerHTML += `<span class="legend-item"><span class="dot down"></span>Anomaly (drop)</span>`;
+  if (hasUp) legend.innerHTML += `<span class="legend-item"><span class="dot up"></span>Anomaly (spike)</span>`;
+  legend.style.display = (hasDown || hasUp || hasBaseline) ? "flex" : "none";
 
   if (!points.length) {
     const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -241,7 +168,8 @@ function renderChart(svg, points, metric) {
   }
 
   const values = points.map((p) => p.value);
-  let vMin = Math.min(...values), vMax = Math.max(...values);
+  const baselineVals = points.map((p) => p.baseline_expected).filter((v) => v !== null && v !== undefined);
+  let vMin = Math.min(...values, ...baselineVals), vMax = Math.max(...values, ...baselineVals);
   const pad = (vMax - vMin) * 0.12 || Math.abs(vMax) * 0.1 || 1;
   vMin -= pad; vMax += pad;
 
@@ -275,6 +203,25 @@ function renderChart(svg, points, metric) {
   area.setAttribute("d", areaPath);
   area.setAttribute("class", "chart-area");
   g.appendChild(area);
+
+  // Baseline: broken into separate subpaths wherever there isn't enough
+  // same-weekday history yet (baseline_expected is null for the first couple
+  // of weeks in range), rather than drawing a misleading line through gaps.
+  let baselinePath = "", drawingBaseline = false;
+  points.forEach((p, i) => {
+    if (p.baseline_expected === null || p.baseline_expected === undefined) {
+      drawingBaseline = false;
+      return;
+    }
+    baselinePath += ` ${drawingBaseline ? "L" : "M"} ${xScale(i)} ${yScale(p.baseline_expected)}`;
+    drawingBaseline = true;
+  });
+  if (baselinePath) {
+    const baseLine = document.createElementNS(ns, "path");
+    baseLine.setAttribute("d", baselinePath.trim());
+    baseLine.setAttribute("class", "chart-baseline");
+    g.appendChild(baseLine);
+  }
 
   let linePath = `M ${xScale(0)} ${yScale(points[0].value)}`;
   points.forEach((p, i) => { if (i > 0) linePath += ` L ${xScale(i)} ${yScale(p.value)}`; });
@@ -347,10 +294,16 @@ function renderChart(svg, points, metric) {
     const valEl = document.createElement("div");
     valEl.className = "t-value"; valEl.textContent = `${METRIC_LABELS[metric] || metric}: ${fmtNumber(p.value)}`;
     tooltip.appendChild(dateEl); tooltip.appendChild(valEl);
+    if (p.baseline_expected !== null && p.baseline_expected !== undefined) {
+      const baseEl = document.createElement("div");
+      baseEl.className = "t-baseline";
+      baseEl.textContent = `Baseline: ${fmtNumber(p.baseline_expected)} (${fmtPct(p.rel_delta)})`;
+      tooltip.appendChild(baseEl);
+    }
     if (p.is_anomaly) {
       const noteEl = document.createElement("div");
       noteEl.className = "t-note";
-      noteEl.textContent = `Anomaly: ${fmtPct(p.rel_delta)} vs expected ${fmtNumber(p.baseline_expected)}`;
+      noteEl.textContent = `Anomaly: ${p.rel_delta >= 0 ? "spike" : "drop"} vs baseline`;
       tooltip.appendChild(noteEl);
     }
   }
@@ -368,7 +321,7 @@ function renderChart(svg, points, metric) {
 function renderIncidentKPIs(incidents) {
   const tiles = document.getElementById("tiles");
   tiles.innerHTML = "";
-  const highCount = incidents.filter((i) => severityFor(i.metric_rel_delta) === "high").length;
+  const highCount = incidents.filter((i) => i.severity === "high").length;
   const metricsAffected = new Set(incidents.map((i) => i.metric)).size;
   let biggest = null;
   incidents.forEach((i) => {
@@ -455,16 +408,15 @@ function renderIncidentList() {
   const list = document.getElementById("incident-list");
   list.innerHTML = "";
 
-  let items = state.incidents.filter((i) => {
-    const sev = severityFor(i.metric_rel_delta);
-    return (state.filterMetric === "all" || i.metric === state.filterMetric) &&
-      (state.filterSeverity === "all" || sev === state.filterSeverity);
-  });
+  let items = state.incidents.filter((i) =>
+    (state.filterMetric === "all" || i.metric === state.filterMetric) &&
+    (state.filterSeverity === "all" || i.severity === state.filterSeverity)
+  );
   const sevRank = { high: 0, medium: 1, low: 2 };
   if (state.sort === "severity") {
-    items = items.slice().sort((a, b) => sevRank[severityFor(a.metric_rel_delta)] - sevRank[severityFor(b.metric_rel_delta)]);
+    items = items.slice().sort((a, b) => sevRank[a.severity] - sevRank[b.severity]);
   } else if (state.sort === "confidence") {
-    items = items.slice().sort((a, b) => (confidenceFor(b.segment_chain) || 0) - (confidenceFor(a.segment_chain) || 0));
+    items = items.slice().sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
   }
 
   if (!state.incidents.length) {
@@ -477,8 +429,8 @@ function renderIncidentList() {
   }
 
   items.forEach((inc) => {
-    const sev = severityFor(inc.metric_rel_delta);
-    const conf = confidenceFor(inc.segment_chain);
+    const sev = inc.severity;
+    const conf = inc.confidence;
     const rootCause = inc.segment_chain && inc.segment_chain.length
       ? inc.segment_chain.map((s) => `${s.dimension} = ${s.value}`).join(" → ")
       : "Broad-based";

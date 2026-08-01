@@ -1,0 +1,7 @@
+.venv
+__pycache__
+*.pyc
+out
+traces
+.setup_logs
+.env

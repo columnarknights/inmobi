@@ -34,36 +34,9 @@ function showToast(message, type) {
   }, 4000);
 }
 
-// Same derivation as the dashboard list (app.js) -- severity/confidence are
-// not pipeline outputs, they're computed here from real numbers the pipeline
-// already produced. Kept in sync deliberately; see app.js for the same logic.
-function metricRelDelta(data) {
-  const d = data.decomposition;
-  if (data.metric === "revenue") return d.revenue_rel_delta;
-  if (d.factor_rel_deltas && data.metric in d.factor_rel_deltas) return d.factor_rel_deltas[data.metric];
-  const b = d.baseline_factors[data.metric], c = d.current_factors[data.metric];
-  return b ? (c - b) / b : null;
-}
-function severityFor(relDelta) {
-  if (relDelta === null || relDelta === undefined) return "medium";
-  const abs = Math.abs(relDelta);
-  if (abs >= 0.15) return "high";
-  if (abs >= 0.05) return "medium";
-  return "low";
-}
-function segmentChainOf(drillDown) {
-  const chain = [];
-  let level = drillDown;
-  while (level && level.primary_segment) {
-    chain.push(level.primary_segment);
-    level = level.deeper;
-  }
-  return chain;
-}
-function confidenceFor(chain) {
-  if (!chain.length) return null;
-  return Math.round(chain[chain.length - 1].explanatory_power * 100);
-}
+// metric_rel_delta/segment_chain/severity/confidence all come straight from
+// the API now (web.py: _derive_fields) -- computed once, server-side, so this
+// page and the dashboard list can't drift out of sync with each other.
 function confidenceRing(pct, size) {
   size = size || 30;
   const r = size / 2 - 3, c = 2 * Math.PI * r;
@@ -139,10 +112,10 @@ async function main() {
   const data = await res.json();
 
   const metricLabel = METRIC_LABELS[data.metric] || data.metric;
-  const relDelta = metricRelDelta(data);
-  const sev = severityFor(relDelta);
-  const chain = segmentChainOf(data.drill_down);
-  const conf = confidenceFor(chain);
+  const relDelta = data.metric_rel_delta;
+  const sev = data.severity;
+  const chain = data.segment_chain || [];
+  const conf = data.confidence;
 
   document.title = `${metricLabel} ${data.current_window[0]}..${data.current_window[1]} — Incident`;
   document.getElementById("title").textContent = `${metricLabel} ${relDelta >= 0 ? "Spike" : "Drop"}`;
@@ -150,7 +123,7 @@ async function main() {
   const sevBadge = document.getElementById("sevBadge");
   sevBadge.style.display = "";
   sevBadge.className = "sev-badge " + sev;
-  sevBadge.textContent = (sev === "high" ? "🔴 " : sev === "medium" ? "🟡 " : "🟢 ") + sev.toUpperCase();
+  sevBadge.textContent = sev.toUpperCase();
 
   document.getElementById("dateLabel").textContent =
     data.current_window[0] === data.current_window[1] ? data.current_window[0] : `${data.current_window[0]} .. ${data.current_window[1]}`;
@@ -182,119 +155,157 @@ async function main() {
   setupDownloadButton(data);
   setupExportButton();
 
-  renderPath(data, metricLabel, chain);
+  renderInvestigationTree(document.getElementById("itree"), data, metricLabel, chain);
   renderFactors(data.decomposition);
   renderEvidence(data, metricLabel, chain);
   renderDrillTree(document.getElementById("drill-tree"), data.drill_down, 0);
   renderStepper();
 }
 
-// ---------------- Investigation Path + Why panel ----------------
+// ---------------- Investigation Path: a Q&A decision tree ----------------
+// Every step is built directly from real pipeline output: which factor/
+// dimension was checked (dimensions_checked / REVENUE_FACTORS), which one
+// won (primary_segment / drill_factor), and the real EP/lift/contribution
+// numbers behind that choice. Rejected candidates are shown too, not just
+// the winner -- "dynamic to which path it chose", not a fixed diagram.
 
-function buildPathNodes(data, metricLabel, chain) {
-  const nodes = [{ kind: "metric", label: metricLabel }];
-  if (data.drill_factor && data.drill_factor !== data.metric) {
-    nodes.push({ kind: "factor", label: METRIC_LABELS[data.drill_factor] || data.drill_factor, factor: data.drill_factor });
-  }
-  chain.forEach((seg, i) => {
-    nodes.push({ kind: "segment", label: `${seg.dimension} = ${seg.value}`, segment: seg, levelIndex: i });
-  });
-  return nodes;
+const CHECK_ICON = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+const CROSS_ICON = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+const ARROW_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>';
+
+function dimLabel(name) {
+  const s = name.replace(/_/g, " ");
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function renderPath(data, metricLabel, chain) {
-  const nodes = buildPathNodes(data, metricLabel, chain);
-  const defaultActive = nodes.length - 1; // lead with the deepest finding
-  const wrap = document.getElementById("detPath");
-
-  function paint(activeIndex) {
-    wrap.innerHTML = "";
-    nodes.forEach((node, i) => {
-      if (i > 0) wrap.appendChild(el("div", "path-connector"));
-      const n = el("div", "path-node" + (i === activeIndex ? " active" : ""), node.label);
-      n.tabIndex = 0;
-      n.addEventListener("click", () => { paint(i); renderWhy(data, metricLabel, chain, nodes, i); });
-      wrap.appendChild(n);
-    });
-  }
-  paint(defaultActive);
-  renderWhy(data, metricLabel, chain, nodes, defaultActive);
-}
-
-function renderWhy(data, metricLabel, chain, nodes, index) {
-  const node = nodes[index];
+function renderInvestigationTree(container, data, metricLabel, chain) {
+  container.innerHTML = "";
   const decomp = data.decomposition;
-  document.getElementById("whyTitle").textContent = `📌 Why ${node.label}?`;
-  const statsEl = document.getElementById("whyStats");
-  const reasonsEl = document.getElementById("whyReasons");
-  let stats = [], reasons = [];
 
-  if (node.kind === "metric") {
-    const b = decomp.baseline_factors[data.metric], c = decomp.current_factors[data.metric];
-    const rel = metricRelDelta(data);
-    stats = [
-      [`Baseline ${metricLabel}`, fmtNumber(b)],
-      [`Current ${metricLabel}`, fmtNumber(c)],
-      ["Deviation", fmtSignedPct(rel)],
-    ];
-    reasons = [
-      "Fell outside the like-for-like baseline for this window, which is what triggers an automatic investigation.",
-      data.drill_factor !== data.metric
-        ? "Decomposed via LMDI into requests, fill rate, render rate, and eCPM to find which factor drove it."
-        : "Investigated directly, since it isn't one of the revenue identity's four factors.",
-    ];
-  } else if (node.kind === "factor") {
-    const contributions = decomp.factor_contributions_to_revenue_delta || {};
-    const relDeltas = decomp.factor_rel_deltas || {};
-    const revenueDelta = decomp.revenue_delta || 1;
-    // Divide by |revenueDelta|, not revenueDelta -- otherwise a negative total
-    // delta flips every factor's sign, showing a factor that pushed revenue
-    // *up* as a negative percentage (and vice versa).
-    const pctOfTotal = (contributions[node.factor] || 0) / Math.abs(revenueDelta);
-    stats = [
-      ["LMDI Contribution", fmtSignedPct(pctOfTotal)],
-      ["Revenue Change", fmtSignedPct(decomp.revenue_rel_delta)],
-      [`${node.label} Change`, fmtSignedPct(relDeltas[node.factor])],
-    ];
-    const sortedByAbsContrib = REVENUE_FACTORS.slice().sort((a, b) => Math.abs(contributions[b] || 0) - Math.abs(contributions[a] || 0));
-    reasons.push(sortedByAbsContrib[0] === node.factor
-      ? "Largest contributor to the revenue movement, by LMDI decomposition."
-      : "One of the factors LMDI attributed part of the revenue movement to.");
-    const others = REVENUE_FACTORS.filter((f) => f !== node.factor);
-    const smallMovers = others.filter((f) => Math.abs(relDeltas[f] || 0) < 0.01).map((f) => METRIC_LABELS[f] || f);
-    if (smallMovers.length) reasons.push(`${smallMovers.join(" and ")} moved less than 1% and weren't significant drivers.`);
-    const revRel = decomp.revenue_rel_delta, facRel = relDeltas[node.factor];
-    if (revRel !== undefined && facRel !== undefined) {
-      const close = Math.abs(Math.abs(facRel) - Math.abs(revRel)) < 0.03;
-      reasons.push(`${node.label} moved ${fmtSignedPct(facRel)}, ${close ? "closely tracking" : "diverging from"} revenue's overall ${fmtSignedPct(revRel)} move.`);
-    }
-  } else {
-    const seg = node.segment;
-    stats = [
-      ["Explanatory Power", seg.explanatory_power],
-      ["Lift", `${seg.lift.toFixed(2)}×`],
-      ["Rate (baseline → current)", `${fmtNumber(seg.rate_baseline)} → ${fmtNumber(seg.rate_current)}`],
-    ];
-    const level = levelAtDepth(data.drill_down, node.levelIndex);
-    const dims = (level && level.dimensions_checked) || {};
-    const totalChecked = Object.values(dims).reduce((n, d) => n + (d.top_segments || []).length, 0);
-    reasons = [
-      `${seg.value} explains ${fmtPct(seg.explanatory_power)} of the movement at this level.`,
-      `Lift of ${seg.lift.toFixed(1)}× — ${seg.lift >= 1.8 ? "far more than" : "roughly in line with"} its size would predict.`,
-      `${totalChecked} segment(s) across ${Object.keys(dims).length} dimension(s) were checked at this level.`,
-    ];
+  container.appendChild(el("div", "itree-stmt",
+    `${metricLabel} ${data.metric_rel_delta >= 0 ? "increased" : "decreased"} by ${fmtPct(Math.abs(data.metric_rel_delta))}`));
+
+  const factorStepNeeded = data.drill_factor && data.drill_factor !== data.metric;
+  if (factorStepNeeded) {
+    container.appendChild(buildFactorStep(decomp, data.drill_factor, metricLabel));
   }
 
-  statsEl.innerHTML = stats.map(([label, value]) =>
-    `<div class="why-stat"><div class="label">${label}</div><div class="value">${value}</div></div>`
-  ).join("");
-  reasonsEl.innerHTML = reasons.map((r) => `<li>${r}</li>`).join("");
+  let parentLabel = factorStepNeeded ? (METRIC_LABELS[data.drill_factor] || data.drill_factor) : metricLabel;
+  let level = data.drill_down;
+  let depth = 0;
+  while (level && level.dimensions_checked && Object.keys(level.dimensions_checked).length) {
+    container.appendChild(buildDimensionStep(level, parentLabel, depth));
+    if (!level.primary_segment) break;
+    parentLabel = level.primary_segment.value;
+    level = level.deeper;
+    depth++;
+  }
+
+  container.appendChild(chain.length ? buildRootCauseBlock(chain, data, metricLabel) : buildBroadBasedEnding());
 }
 
-function levelAtDepth(drillDown, depth) {
-  let level = drillDown;
-  for (let i = 0; i < depth; i++) { if (!level) return null; level = level.deeper; }
-  return level;
+function buildFactorStep(decomp, drillFactor, metricLabel) {
+  const contributions = decomp.factor_contributions_to_revenue_delta || {};
+  const revenueDelta = decomp.revenue_delta || 1;
+  const winnerLabel = METRIC_LABELS[drillFactor] || drillFactor;
+  // |revenueDelta|, not revenueDelta -- see the note in buildRootCauseBlock;
+  // same sign-flip risk when the total delta is negative.
+  const winnerPct = Math.abs((contributions[drillFactor] || 0) / Math.abs(revenueDelta)) * 100;
+
+  const step = el("div", "itree-step");
+  step.appendChild(el("div", "itree-q", `Which factor explains the ${metricLabel.toLowerCase()} movement?`));
+
+  const candidates = el("div", "itree-candidates");
+  REVENUE_FACTORS.forEach((f) => {
+    const isWinner = f === drillFactor;
+    const row = el("div", "itree-candidate " + (isWinner ? "chosen" : "rejected"));
+    row.innerHTML = (isWinner ? CHECK_ICON : CROSS_ICON) + `<span>${METRIC_LABELS[f] || f}</span>` +
+      (isWinner ? `<span class="stat">${winnerPct.toFixed(0)}% of movement</span>` : "");
+    candidates.appendChild(row);
+  });
+  step.appendChild(candidates);
+
+  const answer = el("div", "itree-answer");
+  answer.innerHTML = `<b>Why ${winnerLabel}?</b> LMDI decomposition shows ${winnerLabel} contributed ${winnerPct.toFixed(0)}% ` +
+    `of the ${metricLabel.toLowerCase()} movement — the largest share among the four revenue factors.`;
+  step.appendChild(answer);
+
+  const goto = el("div", "itree-goto");
+  goto.innerHTML = `${ARROW_ICON} Investigate ${winnerLabel}`;
+  step.appendChild(goto);
+  return step;
+}
+
+function buildDimensionStep(level, parentLabel, depth) {
+  const dims = level.dimensions_checked || {};
+  const dimNames = Object.keys(dims);
+  const primary = level.primary_segment;
+
+  const step = el("div", "itree-step");
+  step.appendChild(el("div", "itree-q", `Which dimension ${depth === 0 ? "best explains" : "explains"} the ${parentLabel} degradation?`));
+
+  const candidates = el("div", "itree-candidates");
+  dimNames.forEach((dimName) => {
+    const isWinner = primary && primary.dimension === dimName;
+    const row = el("div", "itree-candidate " + (isWinner ? "chosen" : "rejected"));
+    row.innerHTML = (isWinner ? CHECK_ICON : CROSS_ICON) + `<span>${dimLabel(dimName)}</span>` +
+      (isWinner ? `<span class="stat">EP=${primary.explanatory_power.toFixed(2)} · Lift=${primary.lift.toFixed(1)}×</span>` : "");
+    candidates.appendChild(row);
+  });
+  step.appendChild(candidates);
+
+  if (primary) {
+    const answer = el("div", "itree-answer");
+    answer.innerHTML = `<b>Why ${dimLabel(primary.dimension)} = ${primary.value}?</b> ` +
+      `${primary.value} alone explains ${fmtPct(primary.explanatory_power)} of the movement observed at this level — ` +
+      `${primary.lift.toFixed(1)}× more than its size would predict. Other segments checked moved close to proportionally.`;
+    step.appendChild(answer);
+    const goto = el("div", "itree-goto");
+    goto.innerHTML = `${ARROW_ICON} Investigate ${primary.value}`;
+    step.appendChild(goto);
+  } else {
+    step.appendChild(el("div", "itree-answer",
+      "No dimension cleared the localization bar here — every segment checked moved in proportion to its own size."));
+  }
+  return step;
+}
+
+function buildRootCauseBlock(chain, data, metricLabel) {
+  const block = el("div", "itree-end");
+  const card = el("div", "itree-rootcause");
+  card.appendChild(el("div", "eyebrow", "ROOT CAUSE"));
+
+  const chainRow = el("div", "itree-chain");
+  chain.forEach((s, i) => {
+    if (i > 0) chainRow.appendChild(el("span", "itree-chain-arrow", "→"));
+    chainRow.appendChild(el("span", "itree-chain-item", s.value));
+  });
+  card.appendChild(chainRow);
+
+  const last = chain[chain.length - 1];
+  const factorLabel = METRIC_LABELS[data.drill_factor] || data.drill_factor;
+  const confidenceText = data.confidence !== null && data.confidence !== undefined
+    ? `${data.confidence}% of the overall ${metricLabel.toLowerCase()} movement`
+    : "the movement at the level it was found";
+  card.appendChild(el("p", null,
+    `${factorLabel} moved from ${fmtNumber(last.rate_baseline)} to ${fmtNumber(last.rate_current)} in this segment, ` +
+    `explaining ${confidenceText}.`));
+  block.appendChild(card);
+  return block;
+}
+
+function buildBroadBasedEnding() {
+  const block = el("div", "itree-end");
+  const card = el("div", "itree-rootcause broad");
+  card.appendChild(el("div", "eyebrow", "RESULT"));
+  const chainRow = el("div", "itree-chain");
+  chainRow.appendChild(el("span", "itree-chain-item", "No single segment stands out"));
+  card.appendChild(chainRow);
+  card.appendChild(el("p", null,
+    "Every segment checked moved in proportion to its own size — this looks like a broad, system-wide " +
+    "change rather than one localized cause."));
+  block.appendChild(card);
+  return block;
 }
 
 // ---------------- Contribution breakdown ----------------
@@ -328,8 +339,7 @@ function renderFactors(decomp) {
 function renderEvidence(data, metricLabel, chain) {
   const decomp = data.decomposition;
   const rows = [];
-  const relDelta = metricRelDelta(data);
-  rows.push([metricLabel, decomp.baseline_factors[data.metric], decomp.current_factors[data.metric], relDelta]);
+  rows.push([metricLabel, decomp.baseline_factors[data.metric], decomp.current_factors[data.metric], data.metric_rel_delta]);
 
   if (data.drill_factor && data.drill_factor !== data.metric) {
     const fLabel = METRIC_LABELS[data.drill_factor] || data.drill_factor;
@@ -393,7 +403,7 @@ function renderDrillTree(container, level, depth) {
       tr.className = isPrimary ? "primary-row" : (s.ruled_out ? "ruled-out" : "");
 
       const statusTd = document.createElement("td");
-      statusTd.textContent = isPrimary ? "🔴 Localized cause" : (s.ruled_out ? "Ruled out" : "Notable, not primary");
+      statusTd.textContent = isPrimary ? "Localized cause" : (s.ruled_out ? "Ruled out" : "Notable, not primary");
       tr.appendChild(statusTd);
 
       const cells = [
@@ -428,13 +438,12 @@ function renderDrillTree(container, level, depth) {
 
 function renderStepper() {
   const steps = ["Baseline Comparison", "LMDI Decomposition", "Root Cause Localization", "AI Report Generation"];
-  const checkIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
   const wrap = document.getElementById("detStepper");
   wrap.innerHTML = "";
   steps.forEach((label, i) => {
     if (i > 0) wrap.appendChild(el("div", "step-line"));
     const step = el("div", "step");
-    step.innerHTML = `<div class="step-dot">${checkIcon}</div><div class="step-label">${label}</div>`;
+    step.innerHTML = `<div class="step-dot">${CHECK_ICON}</div><div class="step-label">${label}</div>`;
     wrap.appendChild(step);
   });
 }

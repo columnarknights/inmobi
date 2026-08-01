@@ -18,7 +18,7 @@
     <header class="topbar">
       <div>
         <div class="brand-row" style="margin-bottom:10px;">
-          <svg class="brand-icon" width="20" height="20" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <svg class="brand-icon" width="26" height="26" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <ellipse cx="18" cy="17" rx="13" ry="11" fill="url(#chartAreaGradient)"/>
             <ellipse cx="10.5" cy="21" rx="6.4" ry="5.2" fill="rgba(255,255,255,0.22)"/>
             <circle cx="5.2" cy="18" r="1.7" fill="#06131C"/>
@@ -50,49 +50,41 @@
     </div>
 
     <div class="impact-block">
-      <div class="eyebrow" id="impactLabel" style="font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-secondary); margin-bottom:6px;">IMPACT</div>
+      <div class="eyebrow" id="impactLabel">IMPACT</div>
       <div class="impact-value" id="impactValue">—</div>
     </div>
 
     <hr class="divider" />
 
-    <div class="section-title">🤖 AI Investigation Summary</div>
+    <div class="section-title">AI Investigation Summary</div>
     <div class="narrative-panel" id="narrative">Loading…</div>
 
     <hr class="divider" />
 
-    <div class="section-title">🧠 Investigation Path</div>
-    <p class="section-hint">Click a node to see why the pipeline drilled there.</p>
-    <div class="path-wrap" id="detPath"></div>
+    <div class="section-title">Investigation Path</div>
+    <p class="section-hint">Every step the pipeline took to localize the cause — what it checked, what it ruled out, and why.</p>
+    <div class="itree" id="itree"></div>
 
     <hr class="divider" />
 
-    <div class="why-card">
-      <div class="why-title" id="whyTitle">📌 Why?</div>
-      <div class="why-stats" id="whyStats"></div>
-      <ul class="why-reasons" id="whyReasons"></ul>
-    </div>
-
-    <hr class="divider" />
-
-    <div class="section-title">📊 Contribution Breakdown</div>
+    <div class="section-title">Contribution Breakdown</div>
     <p class="section-hint">How the revenue identity (requests × fill rate × render rate × eCPM) broke down over this window.</p>
     <div class="factor-grid" id="factor-grid"></div>
 
     <hr class="divider" />
 
-    <div class="section-title">📈 Supporting Evidence</div>
+    <div class="section-title">Supporting Evidence</div>
     <div class="evidence-grid" id="detEvidence"></div>
 
     <hr class="divider" />
 
-    <div class="section-title">🔎 How we found it</div>
+    <div class="section-title">How we found it</div>
     <p class="section-hint">Every segment checked, ranked by how much of the movement it explains — expand a level to see the full evidence.</p>
     <div id="drill-tree"></div>
 
     <hr class="divider" />
 
-    <div class="section-title">⚙ Investigation Pipeline</div>
+    <div class="section-title">Investigation Pipeline</div>
     <div class="stepper" id="detStepper"></div>
 
     <hr class="divider" />
