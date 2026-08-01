@@ -113,7 +113,8 @@ The cost model determines how `revenue` is calculated as per:
    2. Plug-and-play components (logic/AI)
 2. Build fixed components:
    1. Event and metric streams
-   2. 
+   2. ClickHouse-LLM-Langfuse integration
+   3. UI
 
 ## Build the Event/Metric Streams
 What we have:
