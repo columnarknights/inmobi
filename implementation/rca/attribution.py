@@ -18,6 +18,22 @@ from .metrics import DIMENSIONS, REVENUE_FACTORS
 
 DateRange = tuple[date, date]
 
+# vertical/campaign_type are advertiser attributes: they only exist on a row
+# once it's filled (advertiser_id is '' otherwise, per metrics_glossary.md).
+# They're meaningful dimensions for factors computed entirely among filled/
+# impression rows (render_rate, ctr, ecpm, revenue), but not for factors whose
+# denominator spans the pre-fill population (requests, fill_rate) — there,
+# every request without a fill has no vertical to be grouped by at all, so
+# slicing by these dimensions is a category error, not a real segment finding.
+_ADVERTISER_ONLY_DIMENSIONS = {"vertical", "campaign_type"}
+_PRE_FILL_FACTORS = {"requests", "fill_rate"}
+
+
+def dimensions_for_factor(factor: str) -> list[str]:
+    if factor in _PRE_FILL_FACTORS:
+        return [d for d in DIMENSIONS if d not in _ADVERTISER_ONLY_DIMENSIONS]
+    return list(DIMENSIONS)
+
 
 def _build_filters(filters: list[tuple[str, str]] | None) -> tuple[str, dict]:
     filters = filters or []
@@ -146,6 +162,11 @@ def segment_table(
             sumIf(revenue, event_date BETWEEN {{c0:Date}} AND {{c1:Date}}) AS revenue_c
         FROM fact_events
         WHERE event_date BETWEEN {{b0:Date}} AND {{c1:Date}}
+        -- vertical/campaign_type are '' on unfilled requests (no advertiser assigned,
+        -- per metrics_glossary.md); that bucket isn't a real segment value and its
+        -- rate is trivially fixed at 0 for any fill-dependent factor, which otherwise
+        -- shows up as a phantom high-lift "segment".
+        AND {dimension} != ''
         {where_extra}
         GROUP BY segment
     """
@@ -307,7 +328,7 @@ def drill_down(
     "the cause" just because it happens to be the largest segment."""
     filters = filters or []
     used_dims = {f[0] for f in filters}
-    dims = [d for d in (dimensions or DIMENSIONS) if d not in used_dims]
+    dims = [d for d in (dimensions or dimensions_for_factor(factor)) if d not in used_dims]
 
     dimension_results: dict[str, list[SegmentResult]] = {}
     excluded: dict[str, list[SegmentResult]] = {}

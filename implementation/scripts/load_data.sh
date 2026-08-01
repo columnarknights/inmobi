@@ -3,6 +3,10 @@
 # applies sql/ddl.sql, then builds the denormalized fact_events table.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# data/ lives at the repo root, one level above implementation/ (this script's
+# own project root) — everything else this script touches (.env, sql/) is
+# relative to implementation/ itself.
+DATA_DIR="../data"
 
 if [ ! -f .env ]; then
   echo "Missing .env (copy .env.example -> .env and fill it in)" >&2

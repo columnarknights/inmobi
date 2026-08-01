@@ -14,10 +14,13 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "click>=8.1.7",
     "rich>=13.7.1",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "fastmcp>=2.0.0",
 ]
 
 [project.scripts]
 rca = "rca.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/rca"]
+packages = ["rca"]

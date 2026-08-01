@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Root-Cause Analyst</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div>
+        <h1>Automated Root-Cause Analyst</h1>
+        <div class="sub" id="meta-sub">Loading dataset info…</div>
+      </div>
+    </header>
+
+    <div class="tiles" id="tiles"></div>
+
+    <div class="filters-row">
+      <div class="tabs" id="metric-tabs"></div>
+      <input type="date" id="start-date" />
+      <span style="color:var(--text-muted); font-size:13px;">to</span>
+      <input type="date" id="end-date" />
+      <div class="spacer"></div>
+      <button class="btn" id="scan-btn">Scan for incidents</button>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title" id="chart-title">Revenue over time</div>
+      <div style="position:relative;">
+        <svg class="chart" id="chart"></svg>
+        <div class="tooltip" id="tooltip"></div>
+      </div>
+    </div>
+
+    <section>
+      <h2>Incidents</h2>
+      <div class="incident-list" id="incident-list"><div class="loading">Loading…</div></div>
+    </section>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
