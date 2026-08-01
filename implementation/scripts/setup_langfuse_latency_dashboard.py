@@ -45,48 +45,62 @@ from rca.config import settings  # noqa: E402
 
 DASHBOARD_NAME = "RCA Pipeline Latency"
 
-WIDGETS = [
+# One row per topic; one widget per percentile in that row (never mixed into
+# the same chart), generated below. Each widget carries exactly one metric.
+_BASE_WIDGETS = [
     dict(
-        name="End-to-end vs. LLM narration latency (p50/p95/p99, ms)",
+        base_name="End-to-end vs. LLM narration latency",
         description="The full investigate pipeline (detect->decompose->drill-down->narrate) vs. just the LLM "
         "narration sub-step. Separated because they have very different tail behavior: the ClickHouse "
         "side stays fast even at p99, the LLM step occasionally spikes on free-tier rate-limit retries.",
         dimensions=[DashboardWidgetDimension(field="name")],
-        metrics=[DashboardWidgetMetric(measure="latency", agg=agg) for agg in ("p50", "p95", "p99")],
         filters=[DashboardWidgetFilter(column="name", operator="any of", value=["investigate", "narrate"], type="stringOptions")],
         chart_type=DashboardWidgetChartType.HORIZONTAL_BAR,
+        aggs=["p50", "p95", "p99"],
     ),
     dict(
-        name="ClickHouse pipeline stages — p95/p99 latency (ms)",
+        base_name="ClickHouse pipeline stages",
         description="window_aggregate (baseline+current), decompose_revenue: the deterministic query stages "
         "that do the actual root-cause analysis, no LLM involved.",
         dimensions=[DashboardWidgetDimension(field="name")],
-        metrics=[DashboardWidgetMetric(measure="latency", agg=agg) for agg in ("p95", "p99")],
         filters=[DashboardWidgetFilter(
             column="name", operator="any of",
             value=["window_aggregate[baseline]", "window_aggregate[current]", "decompose_revenue"],
             type="stringOptions",
         )],
         chart_type=DashboardWidgetChartType.HORIZONTAL_BAR,
+        aggs=["p95", "p99"],
     ),
     dict(
-        name="Drill-down latency by factor — p95/p99 (ms)",
+        base_name="Drill-down latency by factor",
         description="drill_down[<factor>] spans, grouped by which factor was being drilled into.",
         dimensions=[DashboardWidgetDimension(field="name")],
-        metrics=[DashboardWidgetMetric(measure="latency", agg=agg) for agg in ("p95", "p99")],
         filters=[DashboardWidgetFilter(column="name", operator="contains", value="drill_down", type="string")],
         chart_type=DashboardWidgetChartType.HORIZONTAL_BAR,
+        aggs=["p95", "p99"],
     ),
     dict(
-        name="Investigation latency trend — p95/p99 (ms)",
-        description="p95 and p99 end-to-end investigate latency over time, so a live demo can show both "
-        "staying stable (or show exactly when a rate-limit-driven p99 spike happened).",
+        base_name="Investigation latency trend",
+        description="End-to-end investigate latency over time, so a live demo can show it staying stable "
+        "(or show exactly when a rate-limit-driven spike happened).",
         dimensions=[],
-        metrics=[DashboardWidgetMetric(measure="latency", agg=agg) for agg in ("p95", "p99")],
         filters=[DashboardWidgetFilter(column="name", operator="=", value="investigate", type="string")],
         chart_type=DashboardWidgetChartType.LINE_TIME_SERIES,
+        aggs=["p95", "p99"],
     ),
 ]
+
+WIDGETS = []
+for _base in _BASE_WIDGETS:
+    _base = dict(_base)
+    _aggs = _base.pop("aggs")
+    _base_name = _base.pop("base_name")
+    for _agg in _aggs:
+        WIDGETS.append(dict(
+            name=f"{_base_name} — {_agg} (ms)",
+            metrics=[DashboardWidgetMetric(measure="latency", agg=_agg)],
+            **_base,
+        ))
 
 
 def main() -> None:
@@ -143,17 +157,19 @@ def main() -> None:
             print(f"  Removed superseded widget: {w.name}")
             placed_widget_ids.discard(w.id)
 
+    cols, col_width, row_height = 3, 4, 6
     x, y = 0, 0
     for wid in widget_ids:
         if wid in placed_widget_ids:
             continue
         lf.api.unstable.dashboards.add_placement(
             dashboard_id=dash.id,
-            request=CreateDashboardPlacementRequest_Widget(widget_id=wid, x=x, y=y, width=6, height=6),
+            request=CreateDashboardPlacementRequest_Widget(widget_id=wid, x=x, y=y, width=col_width, height=row_height),
         )
-        x = (x + 6) % 12
-        if x == 0:
-            y += 6
+        x += col_width
+        if x >= cols * col_width:
+            x = 0
+            y += row_height
         print(f"  Placed widget {wid} on dashboard")
 
     project_id = lf.api.projects.get().data[0].id
