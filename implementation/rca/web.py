@@ -55,15 +55,15 @@ def timeseries(metric: str, start: str, end: str, lookback_weeks: int = 4):
     from datetime import timedelta
 
     series = baseline.daily_series(client, metric, start_d - timedelta(weeks=lookback_weeks), end_d)
-    anomalies = baseline.detect_anomalies(series, metric, lookback_weeks=lookback_weeks)
-    anomaly_by_date = {a.event_date: a for a in anomalies}
+    evaluations = baseline.evaluate_series(series, metric, lookback_weeks=lookback_weeks)
+    eval_by_date = {e.event_date: e for e in evaluations}
     points = [
         {
             "date": str(p.event_date),
             "value": p.value,
-            "is_anomaly": p.event_date in anomaly_by_date,
-            "baseline_expected": anomaly_by_date[p.event_date].baseline_median if p.event_date in anomaly_by_date else None,
-            "rel_delta": anomaly_by_date[p.event_date].rel_delta if p.event_date in anomaly_by_date else None,
+            "is_anomaly": eval_by_date[p.event_date].is_anomaly,
+            "baseline_expected": eval_by_date[p.event_date].baseline_expected,
+            "rel_delta": eval_by_date[p.event_date].rel_delta,
         }
         for p in series
         if p.event_date >= start_d

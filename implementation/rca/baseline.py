@@ -34,6 +34,21 @@ class Anomaly:
     direction: str  # "up" or "down"
 
 
+@dataclass
+class DayEvaluation:
+    """Same baseline math as Anomaly, computed for every day (not just the
+    ones that clear the anomaly threshold) -- e.g. for drawing a baseline
+    line on a chart alongside the actual value. baseline_expected is None
+    where there isn't enough same-weekday history yet to compute one."""
+    event_date: date
+    value: float
+    baseline_expected: float | None
+    robust_z: float
+    rel_delta: float | None
+    is_anomaly: bool
+    direction: str | None
+
+
 def daily_series(client, metric_name: str, start: date, end: date) -> list[DayPoint]:
     metric = METRICS[metric_name]
     query = f"""
@@ -76,7 +91,7 @@ def _linreg_predict(xs: list[float], ys: list[float], x0: float) -> tuple[float,
     return a + b * x0, residuals
 
 
-def detect_anomalies(
+def evaluate_series(
     series: list[DayPoint],
     metric_name: str,
     lookback_weeks: int = 4,
@@ -84,7 +99,7 @@ def detect_anomalies(
     min_rel_delta: float = 0.02,
     min_history: int = 2,
     trend_min_points: int = 3,
-) -> list[Anomaly]:
+) -> list[DayEvaluation]:
     """Two passes: the first uses every trailing same-weekday point as-is and
     may itself get fooled where a genuine one-day incident sits inside a later
     date's trend baseline (a single contaminated point can drag an OLS fit
@@ -95,11 +110,16 @@ def detect_anomalies(
     would cascade: a date only flagged because ITS OWN baseline was
     contaminated would itself get excluded, stripping otherwise-clean data
     out of a third date's baseline for no reason. The strict/loose split
-    keeps exclusion limited to the genuinely gross outliers."""
+    keeps exclusion limited to the genuinely gross outliers.
+
+    Returns one DayEvaluation per input point (not just the anomalous ones),
+    so a caller that wants "what was the expected baseline on an ordinary
+    day" (e.g. to draw a baseline line on a chart) has it, not only the days
+    that cleared the anomaly threshold."""
     by_date = {p.event_date: p for p in series}
 
-    def _run(exclude: set, z_cut: float, rel_cut: float) -> list[Anomaly]:
-        anomalies: list[Anomaly] = []
+    def _run(exclude: set, z_cut: float, rel_cut: float) -> dict[date, DayEvaluation]:
+        out: dict[date, DayEvaluation] = {}
         for point in series:
             weeks_back = [
                 k
@@ -108,6 +128,10 @@ def detect_anomalies(
                 and (point.event_date - timedelta(weeks=k)) not in exclude
             ]
             if len(weeks_back) < min_history:
+                out[point.event_date] = DayEvaluation(
+                    event_date=point.event_date, value=point.value, baseline_expected=None,
+                    robust_z=0.0, rel_delta=None, is_anomaly=False, direction=None,
+                )
                 continue
             baseline_points = [by_date[point.event_date - timedelta(weeks=k)].value for k in weeks_back]
 
@@ -121,24 +145,40 @@ def detect_anomalies(
                 z = _robust_z(point.value, baseline_points)
 
             rel_delta = (point.value - expected) / expected if expected else 0.0
-
-            if abs(z) >= z_cut and abs(rel_delta) >= rel_cut:
-                anomalies.append(
-                    Anomaly(
-                        event_date=point.event_date,
-                        metric=metric_name,
-                        value=point.value,
-                        baseline_median=expected,
-                        baseline_points=baseline_points,
-                        robust_z=z,
-                        rel_delta=rel_delta,
-                        direction="up" if point.value > expected else "down",
-                    )
-                )
-        return anomalies
+            is_anomaly = abs(z) >= z_cut and abs(rel_delta) >= rel_cut
+            out[point.event_date] = DayEvaluation(
+                event_date=point.event_date, value=point.value, baseline_expected=expected,
+                robust_z=z, rel_delta=rel_delta, is_anomaly=is_anomaly,
+                direction="up" if point.value > expected else "down",
+            )
+        return out
 
     gross = _run(exclude=set(), z_cut=max(z_thresh * 1.5, 8.0), rel_cut=max(min_rel_delta * 5, 0.10))
-    return _run(exclude={a.event_date for a in gross}, z_cut=z_thresh, rel_cut=min_rel_delta)
+    gross_dates = {d for d, e in gross.items() if e.is_anomaly}
+    final = _run(exclude=gross_dates, z_cut=z_thresh, rel_cut=min_rel_delta)
+    return [final[p.event_date] for p in series]
+
+
+def detect_anomalies(
+    series: list[DayPoint],
+    metric_name: str,
+    lookback_weeks: int = 4,
+    z_thresh: float = 3.5,
+    min_rel_delta: float = 0.02,
+    min_history: int = 2,
+    trend_min_points: int = 3,
+) -> list[Anomaly]:
+    evaluations = evaluate_series(
+        series, metric_name, lookback_weeks, z_thresh, min_rel_delta, min_history, trend_min_points,
+    )
+    return [
+        Anomaly(
+            event_date=e.event_date, metric=metric_name, value=e.value,
+            baseline_median=e.baseline_expected, baseline_points=[],
+            robust_z=e.robust_z, rel_delta=e.rel_delta, direction=e.direction,
+        )
+        for e in evaluations if e.is_anomaly
+    ]
 
 
 @dataclass

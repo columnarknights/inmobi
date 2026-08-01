@@ -149,14 +149,12 @@ function renderChart(svg, points, metric) {
   const legend = document.getElementById("chart-legend");
   const hasDown = points.some((p) => p.is_anomaly && p.rel_delta < 0);
   const hasUp = points.some((p) => p.is_anomaly && p.rel_delta >= 0);
-  if (hasDown || hasUp) {
-    legend.style.display = "flex";
-    legend.innerHTML = "";
-    if (hasDown) legend.innerHTML += `<span class="legend-item"><span class="dot down"></span>Anomaly (drop)</span>`;
-    if (hasUp) legend.innerHTML += `<span class="legend-item"><span class="dot up"></span>Anomaly (spike)</span>`;
-  } else {
-    legend.style.display = "none";
-  }
+  const hasBaseline = points.some((p) => p.baseline_expected !== null && p.baseline_expected !== undefined);
+  legend.innerHTML = "";
+  if (hasBaseline) legend.innerHTML += `<span class="legend-item"><span class="dot baseline"></span>Baseline (expected)</span>`;
+  if (hasDown) legend.innerHTML += `<span class="legend-item"><span class="dot down"></span>Anomaly (drop)</span>`;
+  if (hasUp) legend.innerHTML += `<span class="legend-item"><span class="dot up"></span>Anomaly (spike)</span>`;
+  legend.style.display = (hasDown || hasUp || hasBaseline) ? "flex" : "none";
 
   if (!points.length) {
     const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -170,7 +168,8 @@ function renderChart(svg, points, metric) {
   }
 
   const values = points.map((p) => p.value);
-  let vMin = Math.min(...values), vMax = Math.max(...values);
+  const baselineVals = points.map((p) => p.baseline_expected).filter((v) => v !== null && v !== undefined);
+  let vMin = Math.min(...values, ...baselineVals), vMax = Math.max(...values, ...baselineVals);
   const pad = (vMax - vMin) * 0.12 || Math.abs(vMax) * 0.1 || 1;
   vMin -= pad; vMax += pad;
 
@@ -204,6 +203,25 @@ function renderChart(svg, points, metric) {
   area.setAttribute("d", areaPath);
   area.setAttribute("class", "chart-area");
   g.appendChild(area);
+
+  // Baseline: broken into separate subpaths wherever there isn't enough
+  // same-weekday history yet (baseline_expected is null for the first couple
+  // of weeks in range), rather than drawing a misleading line through gaps.
+  let baselinePath = "", drawingBaseline = false;
+  points.forEach((p, i) => {
+    if (p.baseline_expected === null || p.baseline_expected === undefined) {
+      drawingBaseline = false;
+      return;
+    }
+    baselinePath += ` ${drawingBaseline ? "L" : "M"} ${xScale(i)} ${yScale(p.baseline_expected)}`;
+    drawingBaseline = true;
+  });
+  if (baselinePath) {
+    const baseLine = document.createElementNS(ns, "path");
+    baseLine.setAttribute("d", baselinePath.trim());
+    baseLine.setAttribute("class", "chart-baseline");
+    g.appendChild(baseLine);
+  }
 
   let linePath = `M ${xScale(0)} ${yScale(points[0].value)}`;
   points.forEach((p, i) => { if (i > 0) linePath += ` L ${xScale(i)} ${yScale(p.value)}`; });
@@ -276,10 +294,16 @@ function renderChart(svg, points, metric) {
     const valEl = document.createElement("div");
     valEl.className = "t-value"; valEl.textContent = `${METRIC_LABELS[metric] || metric}: ${fmtNumber(p.value)}`;
     tooltip.appendChild(dateEl); tooltip.appendChild(valEl);
+    if (p.baseline_expected !== null && p.baseline_expected !== undefined) {
+      const baseEl = document.createElement("div");
+      baseEl.className = "t-baseline";
+      baseEl.textContent = `Baseline: ${fmtNumber(p.baseline_expected)} (${fmtPct(p.rel_delta)})`;
+      tooltip.appendChild(baseEl);
+    }
     if (p.is_anomaly) {
       const noteEl = document.createElement("div");
       noteEl.className = "t-note";
-      noteEl.textContent = `Anomaly: ${fmtPct(p.rel_delta)} vs expected ${fmtNumber(p.baseline_expected)}`;
+      noteEl.textContent = `Anomaly: ${p.rel_delta >= 0 ? "spike" : "drop"} vs baseline`;
       tooltip.appendChild(noteEl);
     }
   }
