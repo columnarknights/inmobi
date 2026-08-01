@@ -23,7 +23,7 @@
       "fills": 216725.0,
       "impressions": 212456.0,
       "clicks": 2321.0,
-      "revenue": 526.9737460000001
+      "revenue": 526.9737459999999
     },
     "baseline_factors": {
       "requests": 270068.0,
@@ -1150,7 +1150,7 @@
       }
     }
   },
-  "narrative": "The click-through rate (ctr) experienced a negative movement driven primarily by requests, while fill_rate, render_rate, and ecpm also contributed. Across all checked dimensions, the movement was heavily localized to country=ID, which accounted for 0.66 explanatory power with a lift of 9.4. Other segments like ad_format=rewarded (with a lift of -0.44) were checked and ruled out. Going one level deeper within country=ID, the drop further concentrated in vertical=gaming, which had an explanatory power of 0.188 and a lift of 3.19. Meanwhile, segments such as ad_format=rewarded within that drill level were ruled out with a lift of 1.66.",
-  "local_trace_path": "traces/1785591692_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/6b89e67703ab3d92c22e8b8488f89c6f"
+  "narrative": "The click-through rate (ctr) changed by -0.000308, driven primarily by requests contributing 11.59 to revenue delta. When drilling into ctr, the movement was heavily concentrated in country=ID, which showed an explanatory power of 0.66 and a lift of 9.4. Other segments like campaign_type=CPM with an explanatory power of 0.088 were checked and ruled out. Within country=ID, the drop was further concentrated in vertical=gaming, which had an explanatory power of 0.188 and a lift of 3.19.",
+  "local_trace_path": "traces/1785624801_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/4f6bdff2db23a62b304a3b2fbcd8ad4d"
 }

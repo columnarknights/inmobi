@@ -292,6 +292,7 @@ section h2 { font-size: 18px; font-weight: 700; margin: 0 0 6px; }
   border: 1px solid var(--border); border-radius: 16px;
   padding: 20px 22px; margin-bottom: 8px; box-shadow: var(--card-shadow); backdrop-filter: blur(16px);
   font-size: 16px; line-height: 1.65; color: var(--text-primary);
+  white-space: pre-line;
 }
 .trace-links { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13.5px; margin-top: 14px; color: var(--text-muted); }
 .trace-links a { color: var(--series-1); text-decoration: none; }

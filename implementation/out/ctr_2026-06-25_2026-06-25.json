@@ -16,14 +16,14 @@
       "fills": 213797.0,
       "impressions": 209448.0,
       "clicks": 2294.0,
-      "revenue": 518.748191
+      "revenue": 518.7481909999999
     },
     "current_totals": {
       "requests": 277666.0,
       "fills": 208357.0,
       "impressions": 204163.0,
       "clicks": 2118.0,
-      "revenue": 505.2247950000003
+      "revenue": 505.2247950000001
     },
     "baseline_factors": {
       "requests": 272413.0,
@@ -1150,7 +1150,7 @@
       }
     }
   },
-  "narrative": "The metric ctr decreased by -0.0579%, driven primarily by a drop in fill_rate, which contributed -22.97 to the revenue delta. \n\nThe movement was heavily concentrated in country=IN, with an explanatory power of 0.262 and a lift of 4.47. Within country=IN, the drop was further concentrated in device_model=Pixel 8, backed by an explanatory power of 0.157 and a high lift of 6.2. \n\nOther segments, such as ad_format=banner, were checked and ruled out with an explanatory power of 0.003 and a lift of 0.01.",
-  "local_trace_path": "traces/1785591880_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/c4ebaa5b5e41e28048a14fa1bc5f92c9"
+  "narrative": "The metric CTR decreased by -5.29% (falling from 0.010953 to 0.010374), which drove a -13.52 revenue drop primarily caused by fill rate declines. \n\nThe drop was led by country=IN, which had an explanatory power of 0.262 and a lift of 4.47. Within country=IN, the issue was further concentrated in device_model=Pixel 8, which recorded an explanatory power of 0.157 and a very high lift of 6.2. \n\nOther segments such as ad_format=banner were checked and ruled out with an explanatory power of 0.003 and a lift of 0.01.",
+  "local_trace_path": "traces/1785624816_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/a3ef88f4bf7d9381305dabff337a6288"
 }

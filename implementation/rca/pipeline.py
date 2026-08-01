@@ -165,7 +165,7 @@ def _build_payload(metric, current_start, current_end, baseline_range, decomposi
     }
 
 
-def investigate(metric: str, incident_start: date, incident_end: date, max_depth: int = 2) -> dict:
+def investigate(metric: str, incident_start: date, incident_end: date, max_depth: int = 10) -> dict:
     client = get_client()
     current = (incident_start, incident_end)
     baseline_range = (incident_start - timedelta(days=7), incident_end - timedelta(days=7))

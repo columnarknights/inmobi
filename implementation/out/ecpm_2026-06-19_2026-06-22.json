@@ -16,14 +16,14 @@
       "fills": 769927.0,
       "impressions": 754408.0,
       "clicks": 8385.0,
-      "revenue": 1867.8815399999994
+      "revenue": 1867.8815399999992
     },
     "current_totals": {
       "requests": 896618.0,
       "fills": 704073.0,
       "impressions": 689868.0,
       "clicks": 7297.0,
-      "revenue": 1666.5073139999997
+      "revenue": 1666.5073140000002
     },
     "baseline_factors": {
       "requests": 981284.0,
@@ -1202,7 +1202,7 @@
       }
     }
   },
-  "narrative": "Ecpm experienced a relative decline of -0.0243, driven primarily by ecpm, which contributed -43.5 to the revenue drop. The drop was heavily concentrated in category=finance, which accounted for an explanatory power of 0.988 with a high lift of 13.75. Segments like category=social with an explanatory power of -0.035 were checked and ruled out. Drilling deeper within category=finance, the decline was further concentrated in ad_format=video, showing an explanatory power of 0.356 and a lift of 2.69, while ad_format=banner with an explanatory power of 0.069 was ruled out.",
-  "local_trace_path": "traces/1785591673_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/856ea68307ab497ede8f48b442d66c24"
+  "narrative": "Revenue decreased by 10.78% (-201.37), primarily driven by a drop in requests (-159.28) and eCPM (-43.5). The eCPM metric declined by 2.43% from 2.48 to 2.42. \n\nDrilling down into ecpms reveals that the drop was heavily concentrated in category=finance, which accounted for an explanatory power of 0.988 with a disproportionate lift of 13.75. Other categories like social (explanatory power -0.035) were checked and ruled out. \n\nGoing one level deeper within category=finance, the eCPM decline was further concentrated in ad_format=video, showing an explanatory power of 0.356 and a lift of 2.69, while banner ads in this category were ruled out with an explanatory power of 0.069.",
+  "local_trace_path": "traces/1785624788_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/97be048a6efc352af55904d6621a4b72"
 }
