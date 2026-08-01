@@ -86,8 +86,12 @@ async function init() {
   startInput.addEventListener("change", () => { state.start = startInput.value; loadChart(); });
   endInput.addEventListener("change", () => { state.end = endInput.value; loadChart(); });
 
+  // Chart tabs: only the 3 metrics with full revenue-identity drill-down
+  // support (requests/ctr still get investigated and show up as real
+  // incidents in the list below -- just not offered as a chart tab, to keep
+  // the demo's headline surface simple).
   const tabsEl = document.getElementById("metric-tabs");
-  ["revenue", "fill_rate", "ecpm", "requests", "ctr"].forEach((m) => {
+  ["revenue", "fill_rate", "ecpm"].forEach((m) => {
     const btn = document.createElement("button");
     btn.className = "tab" + (m === state.metric ? " active" : "");
     btn.textContent = METRIC_LABELS[m] || m;
