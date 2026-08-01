@@ -44,12 +44,12 @@ echo "==> Applying DDL"
 "${CH[@]}" --multiquery < sql/ddl.sql
 
 echo "==> Loading dimension tables"
-"${CH[@]}" --query "INSERT INTO apps FORMAT CSVWithNames" < data/apps.csv
-"${CH[@]}" --query "INSERT INTO advertisers FORMAT CSVWithNames" < data/advertisers.csv
-"${CH[@]}" --query "INSERT INTO geo_device FORMAT CSVWithNames" < data/geo_device.csv
+"${CH[@]}" --query "INSERT INTO apps FORMAT CSVWithNames" < "$DATA_DIR/apps.csv"
+"${CH[@]}" --query "INSERT INTO advertisers FORMAT CSVWithNames" < "$DATA_DIR/advertisers.csv"
+"${CH[@]}" --query "INSERT INTO geo_device FORMAT CSVWithNames" < "$DATA_DIR/geo_device.csv"
 
 echo "==> Loading raw fact table (ad_events.parquet, ~9M rows)"
-"${CH[@]}" --query "INSERT INTO ad_events_raw FORMAT Parquet" < data/ad_events.parquet
+"${CH[@]}" --query "INSERT INTO ad_events_raw FORMAT Parquet" < "$DATA_DIR/ad_events.parquet"
 
 echo "==> Building denormalized fact_events"
 "${CH[@]}" --multiquery < sql/build_fact.sql
