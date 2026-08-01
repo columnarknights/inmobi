@@ -107,17 +107,52 @@ def investigate(metric: str, start: str, end: str, max_depth: int = 2):
     return result
 
 
+def _segment_chain(drill_down: dict | None) -> list[dict]:
+    """Walks primary_segment -> deeper -> primary_segment ... to the point the
+    drill-down actually stopped localizing further. Empty if broad-based."""
+    chain = []
+    level = drill_down
+    while level and level.get("primary_segment"):
+        chain.append(level["primary_segment"])
+        level = level.get("deeper")
+    return chain
+
+
 def _summarize_incident_file(path: Path) -> dict:
     with open(path) as f:
         data = json.load(f)
+    metric = data.get("metric")
+    decomp = data.get("decomposition") or {}
+    baseline_factors = decomp.get("baseline_factors") or {}
+    current_factors = decomp.get("current_factors") or {}
+    factor_rel_deltas = decomp.get("factor_rel_deltas") or {}
+
+    # The metric's own relative move, whichever metric was actually under
+    # investigation -- revenue_rel_delta only reflects the revenue anomaly
+    # itself, which understates (or misses) the move for a ctr/fill_rate/etc.
+    # incident where revenue barely changed. factor_rel_deltas only covers the
+    # 4 revenue factors, so ctr needs the direct baseline/current computation.
+    if metric == "revenue":
+        metric_rel_delta = decomp.get("revenue_rel_delta")
+    elif metric in factor_rel_deltas:
+        metric_rel_delta = factor_rel_deltas[metric]
+    else:
+        b, c = baseline_factors.get(metric), current_factors.get(metric)
+        metric_rel_delta = (c - b) / b if b else None
+
+    chain = _segment_chain(data.get("drill_down"))
     return {
         "id": path.name,
-        "metric": data.get("metric"),
+        "metric": metric,
         "current_window": data.get("current_window"),
         "baseline_window": data.get("baseline_window"),
-        "revenue_rel_delta": data.get("decomposition", {}).get("revenue_rel_delta"),
-        "revenue_delta": data.get("decomposition", {}).get("revenue_delta"),
-        "primary_segment": (data.get("drill_down") or {}).get("primary_segment"),
+        "revenue_rel_delta": decomp.get("revenue_rel_delta"),
+        "revenue_delta": decomp.get("revenue_delta"),
+        "metric_rel_delta": metric_rel_delta,
+        "metric_baseline": baseline_factors.get(metric),
+        "metric_current": current_factors.get(metric),
+        "primary_segment": chain[0] if chain else None,
+        "segment_chain": chain,
         "narrative": data.get("narrative"),
         "langfuse_trace_url": data.get("langfuse_trace_url"),
     }

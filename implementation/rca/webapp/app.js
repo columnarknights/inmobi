@@ -16,6 +16,10 @@ let state = {
   start: null,
   end: null,
   metrics: [],
+  incidents: [],
+  filterMetric: "all",
+  filterSeverity: "all",
+  sort: "newest",
 };
 
 function fmtNumber(v) {
@@ -43,6 +47,39 @@ async function fetchJSON(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url} -> ${res.status}`);
   return res.json();
+}
+
+// Neither "severity" nor "confidence" are fields the pipeline computes --
+// they're derived here from real numbers the pipeline already produced
+// (metric_rel_delta, and the deepest segment's own explanatory_power), never
+// invented. Broad-based incidents (empty segment_chain) get no confidence
+// number at all rather than a fabricated one.
+function severityFor(relDelta) {
+  if (relDelta === null || relDelta === undefined) return "medium";
+  const abs = Math.abs(relDelta);
+  if (abs >= 0.15) return "high";
+  if (abs >= 0.05) return "medium";
+  return "low";
+}
+
+function confidenceFor(segmentChain) {
+  if (!segmentChain || !segmentChain.length) return null;
+  return Math.round(segmentChain[segmentChain.length - 1].explanatory_power * 100);
+}
+
+function confidenceRing(pct, size) {
+  size = size || 26;
+  const r = size / 2 - 3, c = 2 * Math.PI * r;
+  if (pct === null) {
+    return `<svg class="ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">` +
+      `<circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--gridline)" stroke-width="3"/></svg>`;
+  }
+  const off = c * (1 - pct / 100);
+  return `<svg class="ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">` +
+    `<circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="3"/>` +
+    `<circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="url(#chartAreaGradient)" stroke-width="3" ` +
+    `stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${off}" transform="rotate(-90 ${size / 2} ${size / 2})"/>` +
+    `</svg>`;
 }
 
 async function init() {
@@ -75,13 +112,13 @@ async function init() {
       state.metric = m;
       document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
       btn.classList.add("active");
-      document.getElementById("chart-title").textContent = `${METRIC_LABELS[m] || m} over time`;
       loadChart();
     });
     tabsEl.appendChild(btn);
   });
 
   document.getElementById("scan-btn").addEventListener("click", runScan);
+  setupFilterMenus();
 
   await Promise.all([loadChart(), loadIncidents(), loadLatency()]);
 }
@@ -151,49 +188,21 @@ async function loadChart() {
     `${API}/api/timeseries?metric=${state.metric}&start=${state.start}&end=${state.end}`
   );
   renderChart(svg, data.points, state.metric);
-  renderTiles(data.points, state.metric);
+  updateChartMeta(data.points, state.metric);
 }
 
-function renderTiles(points, metric) {
-  const tiles = document.getElementById("tiles");
-  tiles.innerHTML = "";
-  if (!points.length) return;
+function updateChartMeta(points, metric) {
+  const titleEl = document.getElementById("chart-title");
+  const label = METRIC_LABELS[metric] || metric;
+  if (!points.length) { titleEl.textContent = `${label} over time`; return; }
   const last = points[points.length - 1];
   const prev = points.length > 1 ? points[points.length - 2] : null;
-  const total = points.reduce((s, p) => s + p.value, 0);
-  const avg = total / points.length;
-  const anomalyCount = points.filter((p) => p.is_anomaly).length;
-
-  let latestDelta = null, latestDeltaClass = "";
+  let extra = "";
   if (prev && prev.value) {
-    latestDelta = ((last.value - prev.value) / Math.abs(prev.value)) * 100;
-    latestDeltaClass = latestDelta >= 0 ? "up" : "down";
+    const d = ((last.value - prev.value) / Math.abs(prev.value)) * 100;
+    extra = ` · Latest ${fmtNumber(last.value)} (${d >= 0 ? "+" : ""}${d.toFixed(1)}% vs prior day)`;
   }
-
-  const tileDefs = [
-    {
-      label: `Latest ${METRIC_LABELS[metric] || metric}`, value: fmtNumber(last.value),
-      sub: latestDelta === null ? last.date : `${latestDelta >= 0 ? "+" : ""}${latestDelta.toFixed(1)}% vs prior day`,
-      deltaClass: latestDeltaClass, accent: "",
-    },
-    { label: `Period average`, value: fmtNumber(avg), sub: `${points.length} days`, deltaClass: "", accent: "" },
-    {
-      label: `Anomalous days`, value: String(anomalyCount),
-      sub: anomalyCount ? "flagged vs baseline" : "none flagged — looks stable",
-      deltaClass: "", accent: anomalyCount ? "accent-alert" : "accent-ok",
-    },
-  ];
-  tileDefs.forEach((t) => {
-    const el = document.createElement("div");
-    el.className = "tile" + (t.accent ? ` ${t.accent}` : "");
-    el.innerHTML = `<div class="label"></div><div class="value"></div><div class="delta"></div>`;
-    el.querySelector(".label").textContent = t.label;
-    el.querySelector(".value").textContent = t.value;
-    const deltaEl = el.querySelector(".delta");
-    deltaEl.textContent = t.sub;
-    if (t.deltaClass) deltaEl.classList.add(t.deltaClass);
-    tiles.appendChild(el);
-  });
+  titleEl.textContent = `${label} over time${extra}`;
 }
 
 function renderChart(svg, points, metric) {
@@ -203,8 +212,10 @@ function renderChart(svg, points, metric) {
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
 
-  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const defs = svg.querySelector("defs");
   svg.innerHTML = "";
+  if (defs) svg.appendChild(defs);
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
 
   const legend = document.getElementById("chart-legend");
   const hasDown = points.some((p) => p.is_anomaly && p.rel_delta < 0);
@@ -240,7 +251,6 @@ function renderChart(svg, points, metric) {
   const ns = "http://www.w3.org/2000/svg";
   const g = document.createElementNS(ns, "g");
 
-  // Gridlines (3 horizontal steps)
   const steps = 3;
   for (let s = 0; s <= steps; s++) {
     const v = vMin + ((vMax - vMin) * s) / steps;
@@ -258,7 +268,6 @@ function renderChart(svg, points, metric) {
     g.appendChild(text);
   }
 
-  // Area fill
   let areaPath = `M ${xScale(0)} ${yScale(points[0].value)}`;
   points.forEach((p, i) => { areaPath += ` L ${xScale(i)} ${yScale(p.value)}`; });
   areaPath += ` L ${xScale(points.length - 1)} ${padT + plotH} L ${xScale(0)} ${padT + plotH} Z`;
@@ -267,7 +276,6 @@ function renderChart(svg, points, metric) {
   area.setAttribute("class", "chart-area");
   g.appendChild(area);
 
-  // Line
   let linePath = `M ${xScale(0)} ${yScale(points[0].value)}`;
   points.forEach((p, i) => { if (i > 0) linePath += ` L ${xScale(i)} ${yScale(p.value)}`; });
   const line = document.createElementNS(ns, "path");
@@ -275,7 +283,6 @@ function renderChart(svg, points, metric) {
   line.setAttribute("class", "chart-line");
   g.appendChild(line);
 
-  // Anomaly dots
   points.forEach((p, i) => {
     if (!p.is_anomaly) return;
     const dot = document.createElementNS(ns, "circle");
@@ -286,7 +293,6 @@ function renderChart(svg, points, metric) {
     g.appendChild(dot);
   });
 
-  // X axis labels: first, middle, last date
   [0, Math.floor((points.length - 1) / 2), points.length - 1].forEach((i) => {
     const text = document.createElementNS(ns, "text");
     text.setAttribute("x", xScale(i));
@@ -297,7 +303,6 @@ function renderChart(svg, points, metric) {
     g.appendChild(text);
   });
 
-  // Crosshair
   const crosshair = document.createElementNS(ns, "line");
   crosshair.setAttribute("y1", padT); crosshair.setAttribute("y2", padT + plotH);
   crosshair.setAttribute("class", "chart-crosshair");
@@ -318,7 +323,6 @@ function renderChart(svg, points, metric) {
   svg.appendChild(g);
 
   const tooltip = document.getElementById("tooltip");
-  const container = svg.parentElement;
 
   function showTooltip(evt) {
     const rect = svg.getBoundingClientRect();
@@ -359,37 +363,163 @@ function renderChart(svg, points, metric) {
   hit.addEventListener("pointerleave", hideTooltip);
 }
 
-async function loadIncidents() {
-  const data = await fetchJSON(`${API}/api/incidents`);
+// ---------------- Incidents: KPIs, filters, list ----------------
+
+function renderIncidentKPIs(incidents) {
+  const tiles = document.getElementById("tiles");
+  tiles.innerHTML = "";
+  const highCount = incidents.filter((i) => severityFor(i.metric_rel_delta) === "high").length;
+  const metricsAffected = new Set(incidents.map((i) => i.metric)).size;
+  let biggest = null;
+  incidents.forEach((i) => {
+    if (i.metric_rel_delta === null || i.metric_rel_delta === undefined) return;
+    if (!biggest || Math.abs(i.metric_rel_delta) > Math.abs(biggest.metric_rel_delta)) biggest = i;
+  });
+  const defs = [
+    { label: "Incidents", value: String(incidents.length), accent: "" },
+    { label: "High Severity", value: String(highCount), accent: highCount ? "accent-alert" : "accent-ok" },
+    { label: "Metrics Affected", value: String(metricsAffected), accent: "" },
+    {
+      label: "Biggest Impact",
+      value: biggest
+        ? `${METRIC_LABELS[biggest.metric] || biggest.metric} ${biggest.metric_rel_delta >= 0 ? "+" : ""}${(biggest.metric_rel_delta * 100).toFixed(1)}%`
+        : "—",
+      accent: "impact",
+    },
+  ];
+  defs.forEach((d) => {
+    const tile = el("div", "tile" + (d.accent ? ` ${d.accent}` : ""));
+    tile.appendChild(el("div", "label", d.label));
+    tile.appendChild(el("div", "value", d.value));
+    tiles.appendChild(tile);
+  });
+}
+
+function setupFilterMenus() {
+  document.getElementById("filterRow").addEventListener("click", (e) => {
+    const btn = e.target.closest(".filter-btn");
+    if (!btn) return;
+    const name = btn.dataset.menu;
+    const menu = document.getElementById("menu-" + name);
+    const wasOpen = menu.classList.contains("open");
+    closeAllMenus();
+    if (!wasOpen) {
+      menu.style.left = btn.offsetLeft + "px";
+      menu.classList.add("open");
+      btn.classList.add("open");
+    }
+  });
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("#filterRow")) closeAllMenus();
+  });
+}
+
+function closeAllMenus() {
+  document.querySelectorAll(".filter-menu").forEach((m) => m.classList.remove("open"));
+  document.querySelectorAll(".filter-btn").forEach((b) => b.classList.remove("open"));
+}
+
+function fillMenu(menuId, options, current, onSelect) {
+  const menu = document.getElementById(menuId);
+  menu.innerHTML = "";
+  options.forEach(([value, label]) => {
+    const btn = el("button", value === current ? "sel" : "", label);
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onSelect(value, label);
+      closeAllMenus();
+    });
+    menu.appendChild(btn);
+  });
+}
+
+function renderFilterMenus() {
+  const metricOptions = [["all", "All Metrics"]].concat(
+    Array.from(new Set(state.incidents.map((i) => i.metric))).sort().map((m) => [m, METRIC_LABELS[m] || m])
+  );
+  const severityOptions = [["all", "All Severities"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]];
+  const sortOptions = [["newest", "Newest first"], ["severity", "Highest severity"], ["confidence", "Highest confidence"]];
+
+  fillMenu("menu-metric", metricOptions, state.filterMetric, (v, label) => {
+    state.filterMetric = v; document.getElementById("metricLabel").textContent = label; renderIncidentList();
+  });
+  fillMenu("menu-severity", severityOptions, state.filterSeverity, (v, label) => {
+    state.filterSeverity = v; document.getElementById("severityLabel").textContent = label; renderIncidentList();
+  });
+  fillMenu("menu-sort", sortOptions, state.sort, (v, label) => {
+    state.sort = v; document.getElementById("sortLabel").textContent = label; renderIncidentList();
+  });
+}
+
+function renderIncidentList() {
   const list = document.getElementById("incident-list");
   list.innerHTML = "";
-  if (!data.incidents.length) {
+
+  let items = state.incidents.filter((i) => {
+    const sev = severityFor(i.metric_rel_delta);
+    return (state.filterMetric === "all" || i.metric === state.filterMetric) &&
+      (state.filterSeverity === "all" || sev === state.filterSeverity);
+  });
+  const sevRank = { high: 0, medium: 1, low: 2 };
+  if (state.sort === "severity") {
+    items = items.slice().sort((a, b) => sevRank[severityFor(a.metric_rel_delta)] - sevRank[severityFor(b.metric_rel_delta)]);
+  } else if (state.sort === "confidence") {
+    items = items.slice().sort((a, b) => (confidenceFor(b.segment_chain) || 0) - (confidenceFor(a.segment_chain) || 0));
+  }
+
+  if (!state.incidents.length) {
     list.innerHTML = `<div class="empty">No investigations saved yet. Click "Scan for incidents" above, then investigate one.</div>`;
     return;
   }
-  data.incidents.forEach((inc) => {
+  if (!items.length) {
+    list.innerHTML = `<div class="empty">No incidents match these filters.</div>`;
+    return;
+  }
+
+  items.forEach((inc) => {
+    const sev = severityFor(inc.metric_rel_delta);
+    const conf = confidenceFor(inc.segment_chain);
+    const rootCause = inc.segment_chain && inc.segment_chain.length
+      ? inc.segment_chain.map((s) => `${s.dimension} = ${s.value}`).join(" → ")
+      : "Broad-based";
+    const deltaPct = inc.metric_rel_delta === null || inc.metric_rel_delta === undefined
+      ? "—" : `${inc.metric_rel_delta >= 0 ? "+" : ""}${(inc.metric_rel_delta * 100).toFixed(1)}%`;
+
     const a = document.createElement("a");
-    const primary = inc.primary_segment;
-    a.className = "incident-card" + (primary ? " localized" : "");
+    a.className = `incident-card sev-${sev}`;
     a.href = `incident.html?id=${encodeURIComponent(inc.id)}`;
-    const badgeClass = primary ? "localized" : "broad";
-    const badgeText = primary ? `${primary.dimension} = ${primary.value}` : "Broad-based";
     a.innerHTML = `
       <div class="row1">
         <div class="row1-left">
           <span class="metric-name"></span>
           <span class="window"></span>
         </div>
-        <span class="badge ${badgeClass}"></span>
+        <span class="badge sev-${sev}">${sev.toUpperCase()}</span>
       </div>
+      <div class="incident-metric ${inc.metric_rel_delta >= 0 ? "up" : "down"}"></div>
+      <div class="incident-root">Root Cause: <b></b></div>
       <p class="narrative-snippet"></p>
+      <div class="incident-bottom">
+        <span class="confidence-inline">${confidenceRing(conf, 24)}<span></span></span>
+        <span class="view-link">View Investigation <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg></span>
+      </div>
     `;
     a.querySelector(".metric-name").textContent = METRIC_LABELS[inc.metric] || inc.metric;
     a.querySelector(".window").textContent = `${inc.current_window[0]} .. ${inc.current_window[1]}`;
-    a.querySelector(`.badge.${badgeClass}`).textContent = badgeText;
-    a.querySelector(".narrative-snippet").textContent = (inc.narrative || "").slice(0, 220) + (inc.narrative && inc.narrative.length > 220 ? "…" : "");
+    a.querySelector(".incident-metric").textContent = `${METRIC_LABELS[inc.metric] || inc.metric} ${deltaPct}`;
+    a.querySelector(".incident-root b").textContent = rootCause;
+    a.querySelector(".narrative-snippet").textContent = (inc.narrative || "").slice(0, 200) + (inc.narrative && inc.narrative.length > 200 ? "…" : "");
+    a.querySelector(".confidence-inline span").textContent = conf === null ? "No localized cause" : `Confidence ${conf}%`;
     list.appendChild(a);
   });
+}
+
+async function loadIncidents() {
+  const data = await fetchJSON(`${API}/api/incidents`);
+  state.incidents = data.incidents;
+  renderIncidentKPIs(state.incidents);
+  renderFilterMenus();
+  renderIncidentList();
 }
 
 function showToast(message, type) {
