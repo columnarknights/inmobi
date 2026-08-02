@@ -107,8 +107,51 @@ async function init() {
 
   document.getElementById("scan-btn").addEventListener("click", runScan);
   setupFilterMenus();
+  setupLiveMonitor();
 
   await Promise.all([loadChart(), loadIncidents()]);
+}
+
+// Reflects rca/live_monitor.py's SSE state (ingest/idle/pipeline_start/
+// pipeline_complete) -- this is a live push from the server's own idle
+// detection, not a poll loop the frontend runs itself. "Scan for incidents"
+// stays available as a manual override, not the demo's primary path.
+function setupLiveMonitor() {
+  const pill = document.getElementById("live-pill");
+  const text = document.getElementById("live-pill-text");
+  const es = new EventSource(`${API}/api/live/events`);
+
+  es.onmessage = (e) => {
+    let data;
+    try { data = JSON.parse(e.data); } catch { return; }
+    pill.className = "live-pill " + (data.type || "");
+    if (data.type === "ingest") {
+      text.textContent = `Ingesting… ${data.row_count.toLocaleString()} rows`;
+    } else if (data.type === "idle") {
+      text.textContent = `Idle ${data.idle_seconds.toFixed(0)}s — ${data.row_count.toLocaleString()} rows`;
+    } else if (data.type === "settled") {
+      text.textContent = `Up to date — ${data.row_count.toLocaleString()} rows`;
+    } else if (data.type === "pipeline_start") {
+      text.textContent = "Detecting & investigating…";
+    } else if (data.type === "pipeline_complete") {
+      const n = (data.investigation_ids || []).length;
+      text.textContent = n ? `${n} new incident${n > 1 ? "s" : ""} found` : "Scan complete — nothing new";
+      if (n) {
+        loadIncidents();
+        showToast(`${n} new incident${n > 1 ? "s" : ""} auto-detected`, "success");
+      }
+    } else if (data.type === "error") {
+      text.textContent = "Live monitor error";
+    } else if (data.type === "waiting") {
+      text.textContent = "Waiting for data…";
+    } else {
+      text.textContent = "Connecting…";
+    }
+  };
+  es.onerror = () => {
+    pill.className = "live-pill error";
+    text.textContent = "Live monitor disconnected — retrying…";
+  };
 }
 
 async function loadChart() {
@@ -519,6 +562,14 @@ async function runScan() {
   }
 }
 
-init().catch((e) => {
-  document.getElementById("meta-sub").textContent = "Failed to load: " + e.message;
-});
+// The backend can be briefly unready (e.g. ClickHouse tables mid-reload) --
+// retry instead of dying permanently and forcing a manual page refresh.
+async function initWithRetry() {
+  try {
+    await init();
+  } catch (e) {
+    document.getElementById("meta-sub").textContent = "Failed to load: " + e.message + " -- retrying...";
+    setTimeout(initWithRetry, 3000);
+  }
+}
+initWithRetry();

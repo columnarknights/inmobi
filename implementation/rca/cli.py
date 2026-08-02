@@ -173,16 +173,8 @@ def _print_result(result):
 
 
 def _save_result(result):
-    out_dir = Path("out")
-    out_dir.mkdir(exist_ok=True)
-    base = f"{result['metric']}_{result['current_window'][0]}_{result['current_window'][1]}"
-    fname = f"{base}.json"
-    with open(out_dir / fname, "w") as f:
-        json.dump(result, f, indent=2, default=str)
-    if result.get("sql_script"):
-        with open(out_dir / f"{base}.sql", "w") as f:
-            f.write(result["sql_script"])
-    console.print(f"[dim]Saved: {out_dir / fname}[/dim]")
+    json_path = pipeline.save_investigation_files(result, Path("out"))
+    console.print(f"[dim]Saved: {json_path}[/dim]")
 
 
 if __name__ == "__main__":

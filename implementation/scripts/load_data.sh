@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 # data/ lives at the repo root, one level above implementation/ (this script's
 # own project root) — everything else this script touches (.env, sql/) is
 # relative to implementation/ itself.
-DATA_DIR="../data"
+DATA_DIR="../data/unseen"
 
 if [ ! -f .env ]; then
   echo "Missing .env (copy .env.example -> .env and fill it in)" >&2
@@ -31,14 +31,14 @@ clickhouse-client "${CH_ARGS[@]}" --query "CREATE DATABASE IF NOT EXISTS ${CLICK
 
 CH=(clickhouse-client "${CH_ARGS[@]}" --database "${CLICKHOUSE_DATABASE}")
 
-echo "==> Dropping existing tables (idempotent full reload)"
-"${CH[@]}" --multiquery --query "
-DROP TABLE IF EXISTS fact_events;
-DROP TABLE IF EXISTS ad_events_raw;
-DROP TABLE IF EXISTS apps;
-DROP TABLE IF EXISTS advertisers;
-DROP TABLE IF EXISTS geo_device;
-"
+# echo "==> Dropping existing tables (idempotent full reload)"
+# "${CH[@]}" --multiquery --query "
+# DROP TABLE IF EXISTS fact_events;
+# DROP TABLE IF EXISTS ad_events_raw;
+# DROP TABLE IF EXISTS apps;
+# DROP TABLE IF EXISTS advertisers;
+# DROP TABLE IF EXISTS geo_device;
+# "
 
 echo "==> Applying DDL"
 "${CH[@]}" --multiquery < sql/ddl.sql

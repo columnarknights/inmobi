@@ -7,15 +7,18 @@ result already produced (and traced) by the CLI pipeline — nothing here
 invents data.
 """
 
+import asyncio
 import json
+from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import attribution, baseline, latency, pipeline
+from . import attribution, baseline, latency, live_monitor, pipeline
 from .config import settings
 from .db import get_client
 from .metrics import DIMENSIONS, METRICS
@@ -25,10 +28,44 @@ OUT_DIR = ROOT / "out"
 TRACE_DIR = ROOT / "traces"
 WEBAPP_DIR = Path(__file__).resolve().parent / "webapp"
 
-app = FastAPI(title="InMobi RCA Dashboard")
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    live_monitor.monitor.start()
+    try:
+        yield
+    finally:
+        live_monitor.monitor.stop()
+
+
+app = FastAPI(title="InMobi RCA Dashboard", lifespan=_lifespan)
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
+
+
+@app.get("/api/live/events")
+async def live_events(request: Request):
+    """SSE stream of the live monitor's state -- ingest/idle/pipeline_start/
+    pipeline_complete events, see live_monitor.py. One queue per connected
+    tab; the monitor itself is a single shared background task regardless
+    of how many tabs are open."""
+
+    async def _generator():
+        q = live_monitor.monitor.subscribe()
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(q.get(), timeout=15)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        finally:
+            live_monitor.monitor.unsubscribe(q)
+
+    return StreamingResponse(_generator(), media_type="text/event-stream")
 
 
 @app.get("/api/meta")
@@ -101,15 +138,8 @@ def investigate(metric: str, start: str, end: str, max_depth: int = 2, branch_fa
     result = pipeline.investigate(
         metric, pipeline.parse_date(start), pipeline.parse_date(end), max_depth=max_depth, branch_factor=branch_factor
     )
-    OUT_DIR.mkdir(exist_ok=True)
-    base = f"{result['metric']}_{result['current_window'][0]}_{result['current_window'][1]}"
-    fname = f"{base}.json"
-    with open(OUT_DIR / fname, "w") as f:
-        json.dump(result, f, indent=2, default=str)
-    if result.get("sql_script"):
-        with open(OUT_DIR / f"{base}.sql", "w") as f:
-            f.write(result["sql_script"])
-    result["id"] = fname
+    json_path = pipeline.save_investigation_files(result, OUT_DIR)
+    result["id"] = json_path.name
     return result
 
 

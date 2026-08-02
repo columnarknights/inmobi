@@ -50,5 +50,13 @@ class Settings:
     librechat_base_url: str = _get("LIBRECHAT_BASE_URL", "http://localhost:3080")
     librechat_followup_agent_id: str = _get("LIBRECHAT_FOLLOWUP_AGENT_ID", "")
 
+    # Live monitor: how often it polls fact_events' row count, and how many
+    # continuous seconds of an unchanged count count as "ingestion has gone
+    # quiet" -- the only signal that triggers an automatic scan+investigate.
+    # There is no explicit "batch done" flag from the loader; this idle
+    # window is the entire detection mechanism (see rca/live_monitor.py).
+    live_poll_seconds: float = float(_get("LIVE_POLL_SECONDS", "2"))
+    live_idle_seconds: float = float(_get("LIVE_IDLE_SECONDS", "10"))
+
 
 settings = Settings()
