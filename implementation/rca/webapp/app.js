@@ -114,7 +114,7 @@ async function init() {
 
 // Reflects rca/live_monitor.py's SSE state (ingest/idle/pipeline_start/
 // pipeline_complete) -- this is a live push from the server's own idle
-// detection, not a poll loop the frontend runs itself. "Scan for incidents"
+// detection, not a poll loop the frontend runs itself. "Force refresh"
 // stays available as a manual override, not the demo's primary path.
 function setupLiveMonitor() {
   const pill = document.getElementById("live-pill");
@@ -463,7 +463,7 @@ function renderIncidentList() {
   }
 
   if (!state.incidents.length) {
-    list.innerHTML = `<div class="empty">No investigations saved yet. Click "Scan for incidents" above, then investigate one.</div>`;
+    list.innerHTML = `<div class="empty">No investigations saved yet. Click "Force refresh" above, then investigate one.</div>`;
     return;
   }
   if (!items.length) {
@@ -558,7 +558,7 @@ async function runScan() {
     showToast("Scan failed: " + e.message, "error");
   } finally {
     btn.disabled = false;
-    btn.textContent = "Scan for incidents";
+    btn.textContent = "Force refresh";
   }
 }
 
