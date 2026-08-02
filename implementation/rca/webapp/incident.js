@@ -102,6 +102,24 @@ function setupExportButton() {
   document.getElementById("export-btn").addEventListener("click", () => window.print());
 }
 
+function setupSqlDownloadButton(data) {
+  const btn = document.getElementById("sql-download-btn");
+  if (!data.sql_script) return; // older saved incidents predate this field
+  btn.style.display = "";
+  btn.addEventListener("click", () => {
+    const blob = new Blob([data.sql_script], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${data.id}.sql`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast("Downloaded " + a.download, "success");
+  });
+}
+
 async function main() {
   const params = new URLSearchParams(window.location.search);
   const id = params.get("id");
@@ -156,6 +174,7 @@ async function main() {
   setupFollowupButtons(data.id, metricLabel, data);
   setupLangfuseButton(data);
   setupDownloadButton(data);
+  setupSqlDownloadButton(data);
   setupExportButton();
 
   renderInvestigationTree(document.getElementById("itree"), data, metricLabel);

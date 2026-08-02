@@ -11,6 +11,7 @@ is invented or estimated.
 """
 
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -49,7 +50,28 @@ def _build_filters(filters: list[tuple[str, str]] | None) -> tuple[str, dict]:
     return where_extra, params
 
 
-def window_aggregate(client, start: date, end: date, filters: list[tuple[str, str]] | None = None) -> dict:
+def _render_sql(template: str, params: dict) -> str:
+    """Substitutes {key:Type} placeholders with literal, properly quoted
+    values, purely to produce a human-readable, copy-pasteable query for
+    the downloadable SQL log -- display only. The actual query sent to
+    ClickHouse is always the parameterized `template` passed to
+    client.query(); this never touches execution."""
+    rendered = template
+    for key, value in params.items():
+        if isinstance(value, str):
+            literal = "'" + value.replace("'", "''") + "'"
+        elif isinstance(value, date):
+            literal = f"'{value.isoformat()}'"
+        else:
+            literal = str(value)
+        rendered = re.sub(r"\{" + re.escape(key) + r":[A-Za-z]+\}", literal, rendered)
+    return re.sub(r"\n[ \t]*\n+", "\n", rendered).strip()
+
+
+def window_aggregate(
+    client, start: date, end: date, filters: list[tuple[str, str]] | None = None,
+    query_log: list[dict] | None = None, label: str | None = None,
+) -> dict:
     where_extra, params = _build_filters(filters)
     query = f"""
         SELECT
@@ -63,6 +85,8 @@ def window_aggregate(client, start: date, end: date, filters: list[tuple[str, st
         {where_extra}
     """
     params.update({"start": start, "end": end})
+    if query_log is not None:
+        query_log.append({"label": label or "Window aggregate", "sql": _render_sql(query, params)})
     row = client.query(query, parameters=params).result_rows[0]
     return {
         "requests": float(row[0]),
@@ -164,7 +188,8 @@ def decompose_revenue(baseline_agg: dict, current_agg: dict) -> RevenueDecomposi
 
 
 def segment_table(
-    client, dimension: str, baseline: DateRange, current: DateRange, filters: list[tuple[str, str]] | None = None
+    client, dimension: str, baseline: DateRange, current: DateRange, filters: list[tuple[str, str]] | None = None,
+    query_log: list[dict] | None = None, label: str | None = None,
 ) -> list[dict]:
     if dimension not in DIMENSIONS:
         raise ValueError(f"Unknown dimension: {dimension}")
@@ -195,6 +220,8 @@ def segment_table(
         GROUP BY segment
     """
     params.update({"b0": b0, "b1": b1, "c0": c0, "c1": c1})
+    if query_log is not None:
+        query_log.append({"label": label or f"Rank segments for dimension '{dimension}'", "sql": _render_sql(query, params)})
     result = client.query(query, parameters=params)
     cols = result.column_names
     return [dict(zip(cols, row)) for row in result.result_rows]
@@ -343,6 +370,7 @@ def drill_down(
     min_volume_share: float = 0.02, ep_threshold: float = 0.15,
     lift_thresh: float = 1.8,
     branch_factor: int = 2,
+    query_log: list[dict] | None = None,
 ) -> DrillLevel:
     """For each dimension, rank segments by explanatory power. A dimension's
     top candidate only becomes a `primaries` entry (a localized cause worth
@@ -370,8 +398,10 @@ def drill_down(
     excluded: dict[str, list[SegmentResult]] = {}
     qualifying: list[tuple[str, SegmentResult]] = []  # (dim, top-candidate) for every dimension that cleared lift_thresh
 
+    where_clause = f" (within {', '.join(f'{d}={v}' for d, v in filters)})" if filters else ""
     for dim in dims:
-        rows = segment_table(client, dim, baseline, current, filters)
+        label = f"Depth {depth}{where_clause} — rank segments for dimension '{dim}'"
+        rows = segment_table(client, dim, baseline, current, filters, query_log=query_log, label=label)
         significant, low_volume = rank_segments(rows, dim, factor, min_volume_share, ep_threshold)
         dimension_results[dim] = significant
         excluded[dim] = low_volume
@@ -402,6 +432,7 @@ def drill_down(
                 drill_down(
                     client, factor, baseline, current, child_filters, dims,
                     depth + 1, max_depth, min_volume_share, ep_threshold, lift_thresh, branch_factor,
+                    query_log,
                 )
             )
     return level

@@ -102,9 +102,13 @@ def investigate(metric: str, start: str, end: str, max_depth: int = 2, branch_fa
         metric, pipeline.parse_date(start), pipeline.parse_date(end), max_depth=max_depth, branch_factor=branch_factor
     )
     OUT_DIR.mkdir(exist_ok=True)
-    fname = f"{result['metric']}_{result['current_window'][0]}_{result['current_window'][1]}.json"
+    base = f"{result['metric']}_{result['current_window'][0]}_{result['current_window'][1]}"
+    fname = f"{base}.json"
     with open(OUT_DIR / fname, "w") as f:
         json.dump(result, f, indent=2, default=str)
+    if result.get("sql_script"):
+        with open(OUT_DIR / f"{base}.sql", "w") as f:
+            f.write(result["sql_script"])
     result["id"] = fname
     return result
 

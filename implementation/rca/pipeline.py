@@ -107,6 +107,23 @@ def _round(x, n=4):
         return x
 
 
+def _build_sql_script(metric: str, current: tuple[date, date], baseline_range: tuple[date, date], query_log: list[dict]) -> str:
+    """Every query this investigation actually ran against ClickHouse, in the
+    exact order it ran them, as a single plain-SQL file a user can download
+    and replay by hand. query_log is appended to in real call order by
+    attribution.window_aggregate/segment_table/drill_down -- this just
+    formats it; it doesn't change what got executed."""
+    lines = [
+        f"-- Investigation: {metric}, {current[0]} to {current[1]} (baseline: {baseline_range[0]} to {baseline_range[1]})",
+        "",
+    ]
+    for i, entry in enumerate(query_log, 1):
+        lines.append(f"-- Step {i}: {entry['label']}")
+        lines.append(entry["sql"] + ";")
+        lines.append("")
+    return "\n".join(lines)
+
+
 def _segment_dict(s: attribution.SegmentResult) -> dict:
     return {
         "dimension": s.dimension,
@@ -176,6 +193,7 @@ def investigate(
     client = get_client()
     current = (incident_start, incident_end)
     baseline_range = (incident_start - timedelta(days=7), incident_end - timedelta(days=7))
+    query_log: list[dict] = []  # every query run, in call order -- see _build_sql_script
 
     with Tracer(
         "investigate",
@@ -186,11 +204,17 @@ def investigate(
         },
     ) as tracer:
         with tracer.span("window_aggregate[baseline]", input={"range": [str(baseline_range[0]), str(baseline_range[1])]}) as span:
-            baseline_agg = attribution.window_aggregate(client, *baseline_range)
+            baseline_agg = attribution.window_aggregate(
+                client, *baseline_range, query_log=query_log,
+                label=f"Baseline window aggregate ({baseline_range[0]} to {baseline_range[1]})",
+            )
             span.set_output(baseline_agg)
 
         with tracer.span("window_aggregate[current]", input={"range": [str(current[0]), str(current[1])]}) as span:
-            current_agg = attribution.window_aggregate(client, *current)
+            current_agg = attribution.window_aggregate(
+                client, *current, query_log=query_log,
+                label=f"Current window aggregate ({current[0]} to {current[1]})",
+            )
             span.set_output(current_agg)
 
         with tracer.span("decompose_revenue") as span:
@@ -218,7 +242,8 @@ def investigate(
             input={"factor": drill_factor, "max_depth": max_depth, "branch_factor": branch_factor},
         ) as span:
             drill = attribution.drill_down(
-                client, drill_factor, baseline_range, current, max_depth=max_depth, branch_factor=branch_factor
+                client, drill_factor, baseline_range, current, max_depth=max_depth, branch_factor=branch_factor,
+                query_log=query_log,
             )
             span.set_output(summarize_drill(drill))
 
@@ -236,6 +261,7 @@ def investigate(
             "narrative": narrative,
             "local_trace_path": None,
             "langfuse_trace_url": tracer.trace_url,
+            "sql_script": _build_sql_script(metric, current, baseline_range, query_log),
         }
         tracer.set_output({"narrative": narrative})
 
