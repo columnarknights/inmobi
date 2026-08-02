@@ -18,6 +18,7 @@ services:
     volumes:
       - ./implementation/out:/app/out
       - ./implementation/traces:/app/traces
+      - ./implementation/state:/app/state
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/meta', timeout=3)"]

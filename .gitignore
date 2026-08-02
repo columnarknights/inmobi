@@ -20,3 +20,8 @@ librechat/.debug/
 # Regenerable synthetic test dataset (implementation/scripts/generate_test_dataset.py,
 # fixed random seed) -- large binary, not worth versioning.
 data/test_ad_events.parquet
+
+# Live monitor's scan watermark (rca/incremental.py) -- per-environment
+# progress state, not source; committing one environment's would be wrong
+# for any other.
+implementation/state/

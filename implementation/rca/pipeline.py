@@ -5,6 +5,7 @@ Tracer span so the whole thing is auditable end to end.
 
 import json
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 from . import attribution, baseline
 from . import narrate as narrate_mod
@@ -12,6 +13,22 @@ from .db import get_client
 from .tracing import Tracer
 
 DEFAULT_METRICS = ["revenue", "fill_rate", "ecpm", "requests", "ctr"]
+
+
+def save_investigation_files(result: dict, out_dir: Path) -> Path:
+    """Writes {id}.json (and {id}.sql, if present) to out_dir. Shared by the
+    CLI, the dashboard's /api/investigate handler, and the live monitor's
+    incremental runs, so all three persist identically instead of each
+    re-implementing the same two file writes."""
+    out_dir.mkdir(exist_ok=True, parents=True)
+    base = f"{result['metric']}_{result['current_window'][0]}_{result['current_window'][1]}"
+    json_path = out_dir / f"{base}.json"
+    with open(json_path, "w") as f:
+        json.dump(result, f, indent=2, default=str)
+    if result.get("sql_script"):
+        with open(out_dir / f"{base}.sql", "w") as f:
+            f.write(result["sql_script"])
+    return json_path
 
 
 def parse_date(s: str) -> date:
