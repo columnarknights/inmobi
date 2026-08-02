@@ -431,8 +431,13 @@ function renderIncidentList() {
   items.forEach((inc) => {
     const sev = inc.severity;
     const conf = inc.confidence;
-    const rootCause = inc.segment_chain && inc.segment_chain.length
-      ? inc.segment_chain.map((s) => `${s.dimension} = ${s.value}`).join(" → ")
+    // segment_chains holds one path per independent cause the drill-down
+    // found (usually one). The strongest is chains[0] -- show that as the
+    // headline and note the count if there's more than one, rather than
+    // silently hiding that other causes were also found.
+    const chains = inc.segment_chains || [];
+    const rootCause = chains.length && chains[0].length
+      ? chains[0].map((s) => `${s.dimension} = ${s.value}`).join(" → ") + (chains.length > 1 ? ` (+${chains.length - 1} more)` : "")
       : "Broad-based";
     const deltaPct = inc.metric_rel_delta === null || inc.metric_rel_delta === undefined
       ? "—" : `${inc.metric_rel_delta >= 0 ? "+" : ""}${(inc.metric_rel_delta * 100).toFixed(1)}%`;

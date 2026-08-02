@@ -1150,7 +1150,7 @@
       }
     }
   },
-  "narrative": "The click-through rate (ctr) experienced a negative movement driven primarily by requests, while fill_rate, render_rate, and ecpm also contributed. Across all checked dimensions, the movement was heavily localized to country=ID, which accounted for 0.66 explanatory power with a lift of 9.4. Other segments like ad_format=rewarded (with a lift of -0.44) were checked and ruled out. Going one level deeper within country=ID, the drop further concentrated in vertical=gaming, which had an explanatory power of 0.188 and a lift of 3.19. Meanwhile, segments such as ad_format=rewarded within that drill level were ruled out with a lift of 1.66.",
-  "local_trace_path": "traces/1785591692_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/6b89e67703ab3d92c22e8b8488f89c6f"
+  "narrative": "The click-through rate (ctr) experienced a decline, driven primarily by requests growing while clicks saw a slight drop, leading to an overall downward shift in performance. \n\nDrill-down analysis reveals that this movement was primarily concentrated in country=ID, which accounted for an explanatory power of 0.66 and a high lift of 9.4. Other segments like publisher_tier=tier_2 were checked and ruled out with a low explanatory power of 0.116 and a lift of 0.25. \n\nGoing one level deeper within country=ID, the drop is further concentrated in vertical=gaming, backed by an explanatory power of 0.188 and a lift of 3.19. Meanwhile, segments like ad_format=rewarded were ruled out at this deeper level with an explanatory power of 0.149 and a lift of 1.66.",
+  "local_trace_path": "traces/1785626604_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/a9a3034fe630ee379711c66da81d5a96"
 }

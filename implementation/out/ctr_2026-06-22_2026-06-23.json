@@ -16,14 +16,14 @@
       "fills": 433753.0,
       "impressions": 425104.0,
       "clicks": 4709.0,
-      "revenue": 1053.325162
+      "revenue": 1053.3251619999996
     },
     "current_totals": {
       "requests": 563775.0,
       "fills": 432773.0,
       "impressions": 424135.0,
       "clicks": 4362.0,
-      "revenue": 1037.1317089999998
+      "revenue": 1037.131709
     },
     "baseline_factors": {
       "requests": 552674.0,
@@ -1150,7 +1150,7 @@
       }
     }
   },
-  "narrative": "The click-through rate (ctr) decreased by 7.15% from 0.011077 to 0.010284, driven primarily by country=NG (explanatory_power: 0.152, lift: 4.65). Within country=NG, the decline was further concentrated in ad_format=rewarded (explanatory_power: 0.334, lift: 3.75), where the rate dropped from 0.035073 to 0.02046. Other segments, such as ad_format=interstitial with an explanatory power of -0.036 and lift of -0.21, were checked and ruled out.",
-  "local_trace_path": "traces/1785591860_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/d7ce32e5e2249f72fdeb14fc666ebbce"
+  "narrative": "The metric click-through rate (CTR) decreased by 0.000793 (moving from 0.011077 to 0.010284), driven primarily by decreases in fill rate (-23.15 revenue impact) and eCPM (-13.81 revenue impact). \n\nThe drop in CTR was concentrated in country=NG, which had an explanatory power of 0.152 and a high lift of 4.65. Within country=NG, the decline was further concentrated in ad_format=rewarded, which showed an explanatory power of 0.334 and a lift of 3.75, with its rate falling from 0.035073 to 0.02046. \n\nOther segments, such as ad_format=interstitial in the top-level check, were ruled out with an explanatory power of -0.036 and a lift of -0.21. Similarly, campaign_type=CPM showed broad, proportional movement with a lift of 0.96, ruling it out as a primary localized cause.",
+  "local_trace_path": "traces/1785626612_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/9307d34c829c12d3a4b683785764a9df"
 }

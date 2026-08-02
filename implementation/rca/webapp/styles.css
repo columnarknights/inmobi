@@ -292,6 +292,7 @@ section h2 { font-size: 18px; font-weight: 700; margin: 0 0 6px; }
   border: 1px solid var(--border); border-radius: 16px;
   padding: 20px 22px; margin-bottom: 8px; box-shadow: var(--card-shadow); backdrop-filter: blur(16px);
   font-size: 16px; line-height: 1.65; color: var(--text-primary);
+  white-space: pre-line;
 }
 .trace-links { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13.5px; margin-top: 14px; color: var(--text-muted); }
 .trace-links a { color: var(--series-1); text-decoration: none; }
@@ -337,6 +338,22 @@ section h2 { font-size: 18px; font-weight: 700; margin: 0 0 6px; }
 
 .itree-goto { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 700; color: var(--series-2); }
 .itree-goto svg { width: 15px; height: 15px; }
+
+/* The "Why X?" answer + "Investigate X" transition for one qualifying
+   candidate, rendered as its own connector segment (not nested inside
+   .itree-step) so it can be repeated once per branch when more than one
+   dimension independently clears the localization bar. */
+.itree-why { padding: 0 0 26px 28px; margin-left: 9px; border-left: 2px solid var(--gridline); }
+
+/* Wraps one independent branch when a level has more than one qualifying
+   candidate (attribution.drill_down's branch_factor) -- dashed and indented
+   to read as a fork off the shared question above it, distinct from the
+   solid spine used for a single, un-branching path. */
+.itree-branch { margin: 4px 0 0 28px; padding-left: 20px; border-left: 2px dashed var(--gridline); }
+.itree-branch-tag {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--series-2); margin-bottom: 10px;
+}
 
 .itree-end { padding-left: 28px; margin-left: 9px; }
 .itree-rootcause {

@@ -16,14 +16,14 @@
       "fills": 483358.0,
       "impressions": 473556.0,
       "clicks": 5047.0,
-      "revenue": 1142.9228269999996
+      "revenue": 1142.9228270000006
     },
     "current_totals": {
       "requests": 732550.0,
       "fills": 573124.0,
       "impressions": 561675.0,
       "clicks": 6075.0,
-      "revenue": 1395.618177
+      "revenue": 1395.6181769999998
     },
     "baseline_factors": {
       "requests": 615535.0,
@@ -1202,7 +1202,7 @@
       }
     }
   },
-  "narrative": "Revenue increased by 252.7 (22.11%), driven primarily by requests (contribution: 220.17) and ecpm (contribution: 36.81). \n\nFocusing on the ecpm metric, ad_format=video was identified as the primary driver, with an explanatory power of 1.352 and a high lift of 10.37. Within video, the movement was further concentrated in category=finance, backed by an explanatory power of 0.714 and a lift of 9.76. \n\nBy contrast, ad_format=banner was checked and ruled out as a primary driver, showing a negative explanatory power of -1.138 and a lift of -3.27.",
-  "local_trace_path": "traces/1785591678_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/f68a7ad34d3a6adf5717b0626a1e5895"
+  "narrative": "Revenue increased by 252.7 (0.2211), primarily driven by an increase in requests contributing 220.17 and eCPM contributing 36.81. \n\nLooking at eCPM, the movement was driven by ad_format=video with an explanatory power of 1.352 and a lift of 10.37. Within ad_format=video, the change was further concentrated in category=finance, backed by an explanatory power of 0.714 and a lift of 9.76. \n\nBy contrast, ad_format=banner was ruled out with an explanatory power of -1.138 and a lift of -3.27.",
+  "local_trace_path": "traces/1785626596_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/0ecf9ac43d8d26309d39cc97ec98a25d"
 }

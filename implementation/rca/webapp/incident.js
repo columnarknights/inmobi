@@ -34,7 +34,7 @@ function showToast(message, type) {
   }, 4000);
 }
 
-// metric_rel_delta/segment_chain/severity/confidence all come straight from
+// metric_rel_delta/segment_chains/severity/confidence all come straight from
 // the API now (web.py: _derive_fields) -- computed once, server-side, so this
 // page and the dashboard list can't drift out of sync with each other.
 function confidenceRing(pct, size) {
@@ -102,6 +102,24 @@ function setupExportButton() {
   document.getElementById("export-btn").addEventListener("click", () => window.print());
 }
 
+function setupSqlDownloadButton(data) {
+  const btn = document.getElementById("sql-download-btn");
+  if (!data.sql_script) return; // older saved incidents predate this field
+  btn.style.display = "";
+  btn.addEventListener("click", () => {
+    const blob = new Blob([data.sql_script], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${data.id}.sql`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast("Downloaded " + a.download, "success");
+  });
+}
+
 async function main() {
   const params = new URLSearchParams(window.location.search);
   const id = params.get("id");
@@ -114,7 +132,10 @@ async function main() {
   const metricLabel = METRIC_LABELS[data.metric] || data.metric;
   const relDelta = data.metric_rel_delta;
   const sev = data.severity;
-  const chain = data.segment_chain || [];
+  // One chain per independent cause the drill-down localized (almost always
+  // one; more than one when two dimensions each independently cleared the
+  // localization bar -- see attribution.drill_down's branch_factor).
+  const chains = data.segment_chains || [];
   const conf = data.confidence;
 
   document.title = `${metricLabel} ${data.current_window[0]}..${data.current_window[1]} — Incident`;
@@ -153,11 +174,12 @@ async function main() {
   setupFollowupButtons(data.id, metricLabel, data);
   setupLangfuseButton(data);
   setupDownloadButton(data);
+  setupSqlDownloadButton(data);
   setupExportButton();
 
-  renderInvestigationTree(document.getElementById("itree"), data, metricLabel, chain);
+  renderInvestigationTree(document.getElementById("itree"), data, metricLabel);
   renderFactors(data.decomposition);
-  renderEvidence(data, metricLabel, chain);
+  renderEvidence(data, metricLabel, chains);
   renderDrillTree(document.getElementById("drill-tree"), data.drill_down, 0);
   renderStepper();
 }
@@ -178,7 +200,7 @@ function dimLabel(name) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function renderInvestigationTree(container, data, metricLabel, chain) {
+function renderInvestigationTree(container, data, metricLabel) {
   container.innerHTML = "";
   const decomp = data.decomposition;
 
@@ -190,18 +212,56 @@ function renderInvestigationTree(container, data, metricLabel, chain) {
     container.appendChild(buildFactorStep(decomp, data.drill_factor, metricLabel));
   }
 
-  let parentLabel = factorStepNeeded ? (METRIC_LABELS[data.drill_factor] || data.drill_factor) : metricLabel;
-  let level = data.drill_down;
-  let depth = 0;
-  while (level && level.dimensions_checked && Object.keys(level.dimensions_checked).length) {
-    container.appendChild(buildDimensionStep(level, parentLabel, depth));
-    if (!level.primary_segment) break;
-    parentLabel = level.primary_segment.value;
-    level = level.deeper;
-    depth++;
-  }
+  const factorLabel = factorStepNeeded ? (METRIC_LABELS[data.drill_factor] || data.drill_factor) : metricLabel;
+  const level = data.drill_down;
 
-  container.appendChild(chain.length ? buildRootCauseBlock(chain, data, metricLabel) : buildBroadBasedEnding());
+  if (level && level.dimensions_checked && Object.keys(level.dimensions_checked).length) {
+    renderDrillBranch(container, level, factorLabel, factorLabel, metricLabel, 0, []);
+  } else {
+    container.appendChild(buildBroadBasedEnding());
+  }
+}
+
+// Walks one drill level and, for every dimension that cleared the
+// localization bar at this level (level.primary_segments -- almost always
+// one, but occasionally more than one when independent dimensions each
+// disproportionately explain part of the same movement, see
+// attribution.drill_down's branch_factor), recurses into that segment's own
+// sub-drill (level.deeper, index-aligned with primary_segments). When more
+// than one candidate qualifies, each gets its own indented `.itree-branch`
+// so the fork is visually a fork, not another entry in one long column; the
+// single-candidate case (the overwhelming majority of incidents) renders
+// exactly as it always has, with no extra nesting. Each leaf (a branch with
+// nothing further to localize) closes with its own Root Cause block built
+// from exactly the chain of segments that got us there.
+function renderDrillBranch(container, level, parentLabel, factorLabel, metricLabel, depth, chainPrefix) {
+  container.appendChild(buildDimensionStep(level, parentLabel, depth));
+
+  const primaries = level.primary_segments || [];
+  if (!primaries.length) return;
+
+  const deeper = level.deeper || [];
+  const multi = primaries.length > 1;
+
+  primaries.forEach((primary, i) => {
+    let target = container;
+    if (multi) {
+      target = el("div", "itree-branch");
+      const tag = el("div", "itree-branch-tag", `Independent cause ${i + 1} of ${primaries.length}`);
+      target.appendChild(tag);
+      container.appendChild(target);
+    }
+
+    target.appendChild(buildWhyAnswer(primary));
+
+    const chain = chainPrefix.concat([primary]);
+    const child = deeper[i];
+    if (child && child.dimensions_checked && Object.keys(child.dimensions_checked).length) {
+      renderDrillBranch(target, child, primary.value, factorLabel, metricLabel, depth + 1, chain);
+    } else {
+      target.appendChild(buildRootCauseBlock(chain, factorLabel, metricLabel));
+    }
+  });
 }
 
 function buildFactorStep(decomp, drillFactor, metricLabel) {
@@ -239,38 +299,51 @@ function buildFactorStep(decomp, drillFactor, metricLabel) {
 function buildDimensionStep(level, parentLabel, depth) {
   const dims = level.dimensions_checked || {};
   const dimNames = Object.keys(dims);
-  const primary = level.primary_segment;
+  // Every dimension whose top candidate cleared the localization bar --
+  // almost always one, but can be more than one (attribution.drill_down's
+  // branch_factor). All of them are marked chosen here; renderDrillBranch
+  // (the caller) is what actually recurses into each one afterward.
+  const primaries = level.primary_segments || [];
 
   const step = el("div", "itree-step");
   step.appendChild(el("div", "itree-q", `Which dimension ${depth === 0 ? "best explains" : "explains"} the ${parentLabel} degradation?`));
 
   const candidates = el("div", "itree-candidates");
   dimNames.forEach((dimName) => {
-    const isWinner = primary && primary.dimension === dimName;
-    const row = el("div", "itree-candidate " + (isWinner ? "chosen" : "rejected"));
-    row.innerHTML = (isWinner ? CHECK_ICON : CROSS_ICON) + `<span>${dimLabel(dimName)}</span>` +
-      (isWinner ? `<span class="stat">EP=${primary.explanatory_power.toFixed(2)} · Lift=${primary.lift.toFixed(1)}×</span>` : "");
+    const winner = primaries.find((p) => p.dimension === dimName);
+    const row = el("div", "itree-candidate " + (winner ? "chosen" : "rejected"));
+    row.innerHTML = (winner ? CHECK_ICON : CROSS_ICON) + `<span>${dimLabel(dimName)}</span>` +
+      (winner ? `<span class="stat">EP=${winner.explanatory_power.toFixed(2)} · Lift=${winner.lift.toFixed(1)}×</span>` : "");
     candidates.appendChild(row);
   });
   step.appendChild(candidates);
 
-  if (primary) {
-    const answer = el("div", "itree-answer");
-    answer.innerHTML = `<b>Why ${dimLabel(primary.dimension)} = ${primary.value}?</b> ` +
-      `${primary.value} alone explains ${fmtPct(primary.explanatory_power)} of the movement observed at this level — ` +
-      `${primary.lift.toFixed(1)}× more than its size would predict. Other segments checked moved close to proportionally.`;
-    step.appendChild(answer);
-    const goto = el("div", "itree-goto");
-    goto.innerHTML = `${ARROW_ICON} Investigate ${primary.value}`;
-    step.appendChild(goto);
-  } else {
+  if (!primaries.length) {
     step.appendChild(el("div", "itree-answer",
       "No dimension cleared the localization bar here — every segment checked moved in proportion to its own size."));
   }
   return step;
 }
 
-function buildRootCauseBlock(chain, data, metricLabel) {
+// The "Why {dim}={value}?" explanation + "Investigate {value}" transition
+// for one qualifying candidate. Split out from buildDimensionStep so that
+// when several candidates qualify at once, each gets its own answer/
+// transition ahead of its own (independently rendered) sub-branch, instead
+// of only ever being able to say "the" answer for a single winner.
+function buildWhyAnswer(primary) {
+  const wrap = el("div", "itree-why");
+  const answer = el("div", "itree-answer");
+  answer.innerHTML = `<b>Why ${dimLabel(primary.dimension)} = ${primary.value}?</b> ` +
+    `${primary.value} alone explains ${fmtPct(primary.explanatory_power)} of the movement observed at this level — ` +
+    `${primary.lift.toFixed(1)}× more than its size would predict. Other segments checked moved close to proportionally.`;
+  wrap.appendChild(answer);
+  const goto = el("div", "itree-goto");
+  goto.innerHTML = `${ARROW_ICON} Investigate ${primary.value}`;
+  wrap.appendChild(goto);
+  return wrap;
+}
+
+function buildRootCauseBlock(chain, factorLabel, metricLabel) {
   const block = el("div", "itree-end");
   const card = el("div", "itree-rootcause");
   card.appendChild(el("div", "eyebrow", "ROOT CAUSE"));
@@ -283,13 +356,14 @@ function buildRootCauseBlock(chain, data, metricLabel) {
   card.appendChild(chainRow);
 
   const last = chain[chain.length - 1];
-  const factorLabel = METRIC_LABELS[data.drill_factor] || data.drill_factor;
-  const confidenceText = data.confidence !== null && data.confidence !== undefined
-    ? `${data.confidence}% of the overall ${metricLabel.toLowerCase()} movement`
-    : "the movement at the level it was found";
+  // This chain's own root-level explanatory_power, not the incident's
+  // headline `confidence` figure -- confidence is defined as the single
+  // strongest branch's EP (see web.py._confidence_for), which would
+  // overstate a weaker second branch's own block if reused here.
+  const pct = Math.max(0, Math.min(100, Math.round(chain[0].explanatory_power * 100)));
   card.appendChild(el("p", null,
     `${factorLabel} moved from ${fmtNumber(last.rate_baseline)} to ${fmtNumber(last.rate_current)} in this segment, ` +
-    `explaining ${confidenceText}.`));
+    `explaining ${pct}% of the overall ${metricLabel.toLowerCase()} movement.`));
   block.appendChild(card);
   return block;
 }
@@ -336,7 +410,7 @@ function renderFactors(decomp) {
 
 // ---------------- Supporting evidence ----------------
 
-function renderEvidence(data, metricLabel, chain) {
+function renderEvidence(data, metricLabel, chains) {
   const decomp = data.decomposition;
   const rows = [];
   rows.push([metricLabel, decomp.baseline_factors[data.metric], decomp.current_factors[data.metric], data.metric_rel_delta]);
@@ -345,11 +419,14 @@ function renderEvidence(data, metricLabel, chain) {
     const fLabel = METRIC_LABELS[data.drill_factor] || data.drill_factor;
     rows.push([fLabel, decomp.baseline_factors[data.drill_factor], decomp.current_factors[data.drill_factor], (decomp.factor_rel_deltas || {})[data.drill_factor]]);
   }
-  if (chain.length) {
+  // One card per independent chain's deepest segment -- almost always one,
+  // but there can be more (see attribution.drill_down's branch_factor).
+  chains.forEach((chain) => {
+    if (!chain.length) return;
     const seg = chain[chain.length - 1];
     const segRel = seg.rate_baseline ? (seg.rate_current - seg.rate_baseline) / seg.rate_baseline : null;
     rows.push([`${seg.dimension} = ${seg.value}`, seg.rate_baseline, seg.rate_current, segRel]);
-  }
+  });
 
   const grid = document.getElementById("detEvidence");
   grid.innerHTML = rows.map(([label, baseline, current, rel]) => {
@@ -377,11 +454,14 @@ function renderDrillTree(container, level, depth) {
   const dims = level.dimensions_checked || {};
   const dimNames = Object.keys(dims);
   const totalSegments = dimNames.reduce((n, d) => n + (dims[d].top_segments || []).length, 0);
+  // Every dimension whose top candidate cleared the bar at this level --
+  // almost always one, but can be more than one (branch_factor).
+  const primaries = level.primary_segments || [];
 
   const details = document.createElement("details");
   details.className = "evidence-details";
   const summary = document.createElement("summary");
-  summary.textContent = level.primary_segment
+  summary.textContent = primaries.length
     ? `Show full evidence at this level (${dimNames.length} dimensions, ${totalSegments} segments checked)`
     : `Show what was checked (${dimNames.length} dimensions, ${totalSegments} segments — none stood out)`;
   details.appendChild(summary);
@@ -398,7 +478,7 @@ function renderDrillTree(container, level, depth) {
     table.appendChild(thead);
     const tbody = document.createElement("tbody");
     (info.top_segments || []).forEach((s) => {
-      const isPrimary = level.primary_segment && s.value === level.primary_segment.value && dimName === level.primary_segment.dimension;
+      const isPrimary = primaries.some((p) => p.value === s.value && dimName === p.dimension);
       const tr = document.createElement("tr");
       tr.className = isPrimary ? "primary-row" : (s.ruled_out ? "ruled-out" : "");
 
@@ -429,9 +509,9 @@ function renderDrillTree(container, level, depth) {
   wrap.appendChild(details);
   container.appendChild(wrap);
 
-  if (level.deeper) {
-    renderDrillTree(container, level.deeper, depth + 1);
-  }
+  // One recursive call per branch (index-aligned with primary_segments) --
+  // almost always zero or one, but can be more than one.
+  (level.deeper || []).forEach((child) => renderDrillTree(container, child, depth + 1));
 }
 
 // ---------------- Pipeline stepper ----------------

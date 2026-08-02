@@ -95,14 +95,20 @@ def scan(start: str, end: str, metrics: str | None = None, lookback_weeks: int =
 
 
 @app.post("/api/investigate")
-def investigate(metric: str, start: str, end: str, max_depth: int = 2):
+def investigate(metric: str, start: str, end: str, max_depth: int = 2, branch_factor: int = 2):
     if metric not in METRICS:
         raise HTTPException(400, f"Unknown metric: {metric}")
-    result = pipeline.investigate(metric, pipeline.parse_date(start), pipeline.parse_date(end), max_depth=max_depth)
+    result = pipeline.investigate(
+        metric, pipeline.parse_date(start), pipeline.parse_date(end), max_depth=max_depth, branch_factor=branch_factor
+    )
     OUT_DIR.mkdir(exist_ok=True)
-    fname = f"{result['metric']}_{result['current_window'][0]}_{result['current_window'][1]}.json"
+    base = f"{result['metric']}_{result['current_window'][0]}_{result['current_window'][1]}"
+    fname = f"{base}.json"
     with open(OUT_DIR / fname, "w") as f:
         json.dump(result, f, indent=2, default=str)
+    if result.get("sql_script"):
+        with open(OUT_DIR / f"{base}.sql", "w") as f:
+            f.write(result["sql_script"])
     result["id"] = fname
     return result
 
@@ -127,11 +133,11 @@ def _severity_for(metric_rel_delta: float | None) -> str:
     return "low"
 
 
-def _confidence_for(segment_chain: list[dict]) -> int | None:
+def _confidence_for(root_primaries: list[dict]) -> int | None:
     """None (not 0) for a broad-based incident -- there's no cause to be
     confident about, which is a different thing from being confident it's 0%.
 
-    Uses the ROOT level (segment_chain[0]), not the deepest one. explanatory_power
+    Uses the ROOT level's primaries, not any deeper level's. explanatory_power
     at depth > 0 is computed against the movement *within the parent segment's
     filter* (attribution.rank_segments sums totals only from the filtered
     `rows`), not against the original total -- so a deeper segment's EP isn't
@@ -139,27 +145,34 @@ def _confidence_for(segment_chain: list[dict]) -> int | None:
     root level has no filter, so it's always a fraction of the true total
     movement, and is the only one that's consistent across incidents regardless
     of how deep any given drill-down happened to go.
+
+    When more than one root-level dimension independently clears the
+    localization bar (branch_factor > 1), this takes the STRONGEST one's EP,
+    not the sum. The two branches' EPs come from different dimensions' own
+    partitions of the same movement (e.g. ad_format's segments sum to ~100%
+    of the total on their own; country's segments separately also sum to
+    ~100%), so they're two overlapping lenses on the same movement, not
+    disjoint slices of one pie -- adding them would double-count whatever
+    share of requests both segments have in common. Reporting the strongest
+    branch's EP is the same number this function has always reported for a
+    single-cause incident; it just doesn't overstate confidence when a
+    second, weaker cause is also being shown.
     """
-    if not segment_chain:
+    if not root_primaries:
         return None
+    # root_primaries is already sorted strongest-lift-first (attribution.
+    # drill_down sorts `qualifying` by |lift| before truncating to
+    # branch_factor), so [0] is "the strongest branch" for both the
+    # single-primary case (where it's the only element -- byte-identical to
+    # the pre-branching formula) and the multi-primary case.
+    #
     # Raw explanatory_power can fall outside [0, 1] -- when some segments move
     # opposite the overall trend, the ones moving with it can legitimately
     # explain >100% of the net movement on their own (they're offset by the
     # others). That's correct Adtributor math, but confusing as a displayed
     # percentage, so it's clamped to a sane 0-100 range here.
-    pct = round(segment_chain[0]["explanatory_power"] * 100)
+    pct = round(root_primaries[0]["explanatory_power"] * 100)
     return max(0, min(100, pct))
-
-
-def _segment_chain(drill_down: dict | None) -> list[dict]:
-    """Walks primary_segment -> deeper -> primary_segment ... to the point the
-    drill-down actually stopped localizing further. Empty if broad-based."""
-    chain = []
-    level = drill_down
-    while level and level.get("primary_segment"):
-        chain.append(level["primary_segment"])
-        level = level.get("deeper")
-    return chain
 
 
 def _derive_fields(data: dict) -> dict:
@@ -169,17 +182,22 @@ def _derive_fields(data: dict) -> dict:
     decomp = data.get("decomposition") or {}
     baseline_factors = decomp.get("baseline_factors") or {}
     current_factors = decomp.get("current_factors") or {}
+    drill_down = data.get("drill_down") or {}
 
     metric_rel_delta = attribution.metric_rel_delta(metric, decomp)
-    chain = _segment_chain(data.get("drill_down"))
+    # segment_chains: every independent root-to-leaf localization path the
+    # drill-down found (usually one; more than one when branch_factor > 1
+    # and multiple dimensions independently cleared the bar). Shared with
+    # narrate.py so the LLM/fallback narrative and this API agree on what
+    # "the causes" of the incident are.
+    chains = attribution.segment_chains(drill_down)
     return {
         "metric_rel_delta": metric_rel_delta,
         "metric_baseline": baseline_factors.get(metric),
         "metric_current": current_factors.get(metric),
-        "primary_segment": chain[0] if chain else None,
-        "segment_chain": chain,
+        "segment_chains": chains,
         "severity": _severity_for(metric_rel_delta),
-        "confidence": _confidence_for(chain),
+        "confidence": _confidence_for(drill_down.get("primary_segments") or []),
     }
 
 

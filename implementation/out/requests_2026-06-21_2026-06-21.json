@@ -534,7 +534,7 @@
     },
     "primary_segment": null
   },
-  "narrative": "Revenue decreased by 194.77, or 45.37%, driven primarily by a drop in requests which contributed -187.22 to the revenue delta. Across all checked dimensions including ad_format, category, publisher_tier, region, country, device_model, and os_version, no single primary segment drove the movement. Instead, the decline was broad-based and proportional across all segments. For instance, within ad_format, the banner segment showed an explanatory power of 0.347 with a lift of 1.0, following the general trend rather than acting as a localized cause. Similarly, segments such as video under ad_format with an explanatory power of 0.127 and utility under category with an explanatory power of 0.114 were checked and ruled out due to lack of disproportionate impact.",
-  "local_trace_path": "traces/1785591684_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/3ed3c5c2b2a23cc03d498559afb885c2"
+  "narrative": "Revenue fell by -194.77 (-45.37%), driven primarily by a drop in requests which contributed -187.22 to the total delta. Across all checked dimensions including ad_format, category, publisher_tier, region, country, device_model, and os_version, no single primary segment drove the drop. Instead, the decline was broad-based and proportional across segments. For example, within ad_format, the banner segment saw requests fall from 78513.0 to 44006.0 with a lift of 1.0, matching its volume share without a localized anomaly. Similarly, segments like video under ad_format with a lift of 0.97 and category=utility with a lift of 0.96 were checked and ruled out due to lack of disproportionate movement.",
+  "local_trace_path": "traces/1785626601_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/663b67a6378072ee104e6766cc34a695"
 }

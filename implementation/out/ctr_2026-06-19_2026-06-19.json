@@ -23,7 +23,7 @@
       "fills": 208342.0,
       "impressions": 204019.0,
       "clicks": 2124.0,
-      "revenue": 492.137326
+      "revenue": 492.13732600000003
     },
     "baseline_factors": {
       "requests": 259959.0,
@@ -1150,7 +1150,7 @@
       }
     }
   },
-  "narrative": "The CTR metric experienced a downward movement, driven primarily by ecpm and offset by requests. Drilling down, the movement was heavily concentrated in country=NG (lift 5.15, explanatory power 0.167), while segments like DE were ruled out with an explanatory power of -0.134. Within country=NG, the issue is further concentrated in category=news (lift 6.08, explanatory power 0.458), while social was ruled out.",
-  "local_trace_path": "traces/1785591711_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/2c7e981545941db60d9eca1529dbab3c"
+  "narrative": "The ctr metric experienced a downward movement, driven primarily by ecpm dropping -0.0264 relative delta and contributing -13.18 to the revenue delta of -2.73. \n\nWhen drilling down into ctr, the movement was heavily localized to country=NG with an explanatory power of 0.167 and a lift of 5.15. Other segments like country=DE were checked and ruled out with a lift of -3.69. \n\nDrilling deeper within country=NG, the drop was further concentrated in category=news, which showed an explanatory power of 0.458 and a high lift of 6.08, while segments like ad_format=native were ruled out with a lift of 0.54.",
+  "local_trace_path": "traces/1785626607_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/b981c24a7ae364483fd20299451edd9f"
 }
