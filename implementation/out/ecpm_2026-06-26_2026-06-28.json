@@ -23,7 +23,7 @@
       "fills": 573124.0,
       "impressions": 561675.0,
       "clicks": 6075.0,
-      "revenue": 1395.6181770000003
+      "revenue": 1395.6181769999998
     },
     "baseline_factors": {
       "requests": 615535.0,
@@ -1202,7 +1202,7 @@
       }
     }
   },
-  "narrative": "The ecpm metric increased by 0.0295, driven primarily by requests and ecpm factors. Across checked segments, ad_format=video drove the movement with an explanatory power of 1.352 and a lift of 10.37. Within ad_format=video, the movement is further concentrated in category=finance, with an explanatory power of 0.714 and a lift of 9.76. Meanwhile, category=ecommerce was checked and ruled out, showing an explanatory power of 0.077 and a low lift of 0.29.",
-  "local_trace_path": "traces/1785624793_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/17630a1879cf01a569fa1c736ac07de9"
+  "narrative": "Revenue increased by 252.7 (0.2211), primarily driven by an increase in requests contributing 220.17 and eCPM contributing 36.81. \n\nLooking at eCPM, the movement was driven by ad_format=video with an explanatory power of 1.352 and a lift of 10.37. Within ad_format=video, the change was further concentrated in category=finance, backed by an explanatory power of 0.714 and a lift of 9.76. \n\nBy contrast, ad_format=banner was ruled out with an explanatory power of -1.138 and a lift of -3.27.",
+  "local_trace_path": "traces/1785626596_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/0ecf9ac43d8d26309d39cc97ec98a25d"
 }

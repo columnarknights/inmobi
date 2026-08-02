@@ -331,8 +331,8 @@ class DrillLevel:
     filters: list[tuple[str, str]]
     dimension_results: dict[str, list[SegmentResult]]  # significant segments per dimension
     excluded: dict[str, list[SegmentResult]]  # low-volume segments per dimension, for transparency
-    primary: SegmentResult | None
-    child: "DrillLevel | None" = None
+    primaries: list[SegmentResult] = field(default_factory=list)  # every dimension's top candidate that cleared lift_thresh, up to branch_factor
+    children: list["DrillLevel"] = field(default_factory=list)  # index-aligned with primaries: children[i] is primaries[i]'s own sub-drill
 
 
 def drill_down(
@@ -342,48 +342,93 @@ def drill_down(
     depth: int = 0, max_depth: int = 2,
     min_volume_share: float = 0.02, ep_threshold: float = 0.15,
     lift_thresh: float = 1.8,
+    branch_factor: int = 2,
 ) -> DrillLevel:
-    """For each dimension, rank segments by explanatory power, but only
-    declare one a `primary` (localized) cause if its lift clears
-    `lift_thresh` — i.e. it explains meaningfully more of the movement than
-    its own size would predict. A segment whose EP roughly equals its volume
-    share moved exactly in proportion to everyone else; that's evidence of a
-    broad/uniform effect, not a localized one, and must not be reported as
-    "the cause" just because it happens to be the largest segment."""
+    """For each dimension, rank segments by explanatory power. A dimension's
+    top candidate only becomes a `primaries` entry (a localized cause worth
+    drilling into) if its lift clears `lift_thresh` — i.e. it explains
+    meaningfully more of the movement than its own size would predict. A
+    segment whose EP roughly equals its volume share moved exactly in
+    proportion to everyone else; that's evidence of a broad/uniform effect,
+    not a localized one, and must not be reported as "the cause" just
+    because it happens to be the largest segment.
+
+    Unlike a single-cause search, this does not collapse every dimension's
+    candidate down to one global winner: multiple independent dimensions can
+    each legitimately explain a disproportionate share of the same movement
+    (e.g. a device-driven cause and a geography-driven cause coexisting).
+    Every dimension whose top candidate clears the bar is kept, sorted by
+    |lift|, and the strongest `branch_factor` of them each get their own
+    recursive sub-drill — so the result is a tree (bounded breadth per
+    level), not a single chain. branch_factor=1 recovers the old
+    single-winner-only behavior exactly."""
     filters = filters or []
     used_dims = {f[0] for f in filters}
     dims = [d for d in (dimensions or dimensions_for_factor(factor)) if d not in used_dims]
 
     dimension_results: dict[str, list[SegmentResult]] = {}
     excluded: dict[str, list[SegmentResult]] = {}
-    best: SegmentResult | None = None
-    best_dim: str | None = None
+    qualifying: list[tuple[str, SegmentResult]] = []  # (dim, top-candidate) for every dimension that cleared lift_thresh
 
     for dim in dims:
         rows = segment_table(client, dim, baseline, current, filters)
         significant, low_volume = rank_segments(rows, dim, factor, min_volume_share, ep_threshold)
         dimension_results[dim] = significant
+        excluded[dim] = low_volume
         # Candidates for localization must both explain a real share of the
         # movement (not ruled_out) and be disproportionate (lift).
         candidates = [s for s in significant if not s.ruled_out]
-        excluded[dim] = low_volume
         if candidates:
             top = max(candidates, key=lambda s: abs(s.lift))
-            if best is None or abs(top.lift) > abs(best.lift):
-                best = top
-                best_dim = dim
+            if abs(top.lift) >= lift_thresh:
+                qualifying.append((dim, top))
 
-    primary = best if best is not None and abs(best.lift) >= lift_thresh else None
+    # Strongest branch_factor dimensions advance, by |lift|; the rest are
+    # still visible in dimension_results/excluded (so the UI can show them as
+    # "checked, cleared the bar, but not among the top branches explored"),
+    # they just don't get their own recursive sub-drill.
+    qualifying.sort(key=lambda pair: -abs(pair[1].lift))
+    chosen = qualifying[:branch_factor]
 
     level = DrillLevel(
         factor=factor, filters=filters, dimension_results=dimension_results,
-        excluded=excluded, primary=primary,
+        excluded=excluded, primaries=[seg for _, seg in chosen],
     )
 
-    if primary is not None and depth + 1 < max_depth:
-        child_filters = filters + [(best_dim, primary.value)]
-        level.child = drill_down(
-            client, factor, baseline, current, child_filters, dims,
-            depth + 1, max_depth, min_volume_share, ep_threshold, lift_thresh,
-        )
+    if depth + 1 < max_depth:
+        for dim, seg in chosen:
+            child_filters = filters + [(dim, seg.value)]
+            level.children.append(
+                drill_down(
+                    client, factor, baseline, current, child_filters, dims,
+                    depth + 1, max_depth, min_volume_share, ep_threshold, lift_thresh, branch_factor,
+                )
+            )
     return level
+
+
+def segment_chains(drill_down_json: dict | None) -> list[list[dict]]:
+    """Enumerate every root-to-leaf path through a (possibly branching)
+    serialized drill-down tree (pipeline.summarize_drill's output shape:
+    `primary_segments`/`deeper` lists, index-aligned). Each path is the list
+    of segment dicts from the root level down to wherever that branch
+    stopped localizing further. A single-branch incident yields exactly one
+    chain, identical to walking the old singular primary_segment -> deeper
+    chain. Shared by web.py (confidence/root-cause display) and narrate.py
+    (LLM payload + fallback narrative) so both agree on what "the causes"
+    of an incident are."""
+    if not drill_down_json:
+        return []
+    primaries = drill_down_json.get("primary_segments") or []
+    deeper = drill_down_json.get("deeper") or []
+    if not primaries:
+        return []
+    chains: list[list[dict]] = []
+    for i, seg in enumerate(primaries):
+        child = deeper[i] if i < len(deeper) else None
+        sub_chains = segment_chains(child) if child else []
+        if sub_chains:
+            chains.extend([seg] + sub for sub in sub_chains)
+        else:
+            chains.append([seg])
+    return chains

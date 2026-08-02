@@ -1150,7 +1150,7 @@
       }
     }
   },
-  "narrative": "The metric CTR decreased by -5.29% (falling from 0.010953 to 0.010374), which drove a -13.52 revenue drop primarily caused by fill rate declines. \n\nThe drop was led by country=IN, which had an explanatory power of 0.262 and a lift of 4.47. Within country=IN, the issue was further concentrated in device_model=Pixel 8, which recorded an explanatory power of 0.157 and a very high lift of 6.2. \n\nOther segments such as ad_format=banner were checked and ruled out with an explanatory power of 0.003 and a lift of 0.01.",
-  "local_trace_path": "traces/1785624816_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/a3ef88f4bf7d9381305dabff337a6288"
+  "narrative": "The click-through rate (ctr) decreased by 0.000579 (from 0.010953 to 0.010374), driven primarily by the fill_rate factor, which contributed -22.97 to the overall revenue delta of -13.52. \n\nThe drop was concentrated in country=IN, which had an explanatory power of 0.262 and a lift of 4.47. Within country=IN, the issue is further concentrated in device_model=Pixel 8, which recorded an explanatory power of 0.157 and a high lift of 6.2. \n\nSeveral segments were checked and ruled out for having low explanatory power or proportional movement, such as ad_format=banner with an explanatory power of 0.003 and a lift of 0.01.",
+  "local_trace_path": "traces/1785626616_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/110d335e73ccd063eb12415be03e764a"
 }

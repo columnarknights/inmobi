@@ -135,9 +135,14 @@ def summarize_drill(level: attribution.DrillLevel, top_n: int = 5) -> dict:
             "n_segments_checked": len(segs) + len(level.excluded.get(dim, [])),
             "n_excluded_low_volume": len(level.excluded.get(dim, [])),
         }
-    out["primary_segment"] = _segment_dict(level.primary) if level.primary else None
-    if level.child:
-        out["deeper"] = summarize_drill(level.child, top_n)
+    # Plural and index-aligned: primary_segments[i] is the dimension/value
+    # this branch localized on, and deeper[i] (if present) is that branch's
+    # own sub-drill -- there can be more than one when independent
+    # dimensions each disproportionately explain part of the same movement,
+    # not just the single strongest one.
+    out["primary_segments"] = [_segment_dict(s) for s in level.primaries]
+    if level.children:
+        out["deeper"] = [summarize_drill(child, top_n) for child in level.children]
     return out
 
 
@@ -165,7 +170,9 @@ def _build_payload(metric, current_start, current_end, baseline_range, decomposi
     }
 
 
-def investigate(metric: str, incident_start: date, incident_end: date, max_depth: int = 10) -> dict:
+def investigate(
+    metric: str, incident_start: date, incident_end: date, max_depth: int = 10, branch_factor: int = 2
+) -> dict:
     client = get_client()
     current = (incident_start, incident_end)
     baseline_range = (incident_start - timedelta(days=7), incident_end - timedelta(days=7))
@@ -206,8 +213,13 @@ def investigate(metric: str, incident_start: date, incident_end: date, max_depth
         else:
             drill_factor = metric  # e.g. ctr: quality signal, investigated directly
 
-        with tracer.span(f"drill_down[{drill_factor}]", input={"factor": drill_factor, "max_depth": max_depth}) as span:
-            drill = attribution.drill_down(client, drill_factor, baseline_range, current, max_depth=max_depth)
+        with tracer.span(
+            f"drill_down[{drill_factor}]",
+            input={"factor": drill_factor, "max_depth": max_depth, "branch_factor": branch_factor},
+        ) as span:
+            drill = attribution.drill_down(
+                client, drill_factor, baseline_range, current, max_depth=max_depth, branch_factor=branch_factor
+            )
             span.set_output(summarize_drill(drill))
 
         payload = _build_payload(metric, incident_start, incident_end, baseline_range, decomposition, drill)

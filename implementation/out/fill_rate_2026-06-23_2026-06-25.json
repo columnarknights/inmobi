@@ -16,7 +16,7 @@
       "fills": 648505.0,
       "impressions": 635524.0,
       "clicks": 6890.0,
-      "revenue": 1574.4843439999997
+      "revenue": 1574.4843439999995
     },
     "current_totals": {
       "requests": 843741.0,
@@ -958,7 +958,7 @@
       "primary_segment": null
     }
   },
-  "narrative": "Revenue decreased by 2.38% (-37.5) primarily driven by a drop in fill_rate, which contributed -69.64 to the revenue delta as its rate fell from 0.785178 to 0.750805. \n\nDrill-down analysis reveals that this fill rate drop was heavily concentrated in os_version=Android 15, which had an explanatory power of 0.98 and a disproportionate lift of 10.23, as its fill rate plummeted from 0.784925 to 0.43331. Within Android 15, the movement was broad-based and proportional across all checked dimensions (such as region=EU with a lift of 1.0), with no single sub-segment clearing the primary threshold. \n\nOther segments such as region=MEA (lift 0.84) and ad_format=video (lift 0.96) were checked and ruled out as they did not drive the anomaly.",
-  "local_trace_path": "traces/1785624782_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/448fc70db90d07391ee913d6eeafb279"
+  "narrative": "Revenue fell by 37.50 (-2.38%) driven primarily by a drop in fill_rate, which contributed -69.64 to the revenue delta as its rate decreased by -4.38%. \n\nDrilling down into fill_rate, the issue is concentrated in os_version=Android 15, which accounts for an explanatory power of 0.98 and a high lift of 10.23, with its rate plunging from 0.784925 to 0.43331. Within Android 15, the drop is broad-based and proportional across secondary dimensions, as seen with ad_format=banner having a lift of 1.05 and no single primary segment standing out. \n\nOther segments such as ad_format=video (lift 0.96) and region=MEA (lift 0.84) were checked and ruled out due to low explanatory power or proportional movement.",
+  "local_trace_path": "traces/1785626588_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/76fa23a7b0f4f1579a2f810041afc46c"
 }

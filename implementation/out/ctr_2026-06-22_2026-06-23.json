@@ -1150,7 +1150,7 @@
       }
     }
   },
-  "narrative": "The click-through rate (CTR) decreased by 7.15% from 0.011077 to 0.010284, driving a revenue drop of $16.19. This contraction was primarily driven by fill rate and eCPM declines, alongside the lower CTR. \n\nDrill-down analysis isolates country=NG as the primary segment, with an explanatory power of 0.152 and a high lift of 4.65, where the CTR fell sharply from 0.012475 to 0.008794. Other segments like campaign_type=CPM with a lift of 0.96 were checked and ruled out as broad-based. Going one level deeper within country=NG, the decline is further concentrated in ad_format=rewarded, which achieved an explanatory power of 0.334 and a lift of 3.75, dropping its rate from 0.035073 to 0.02046. Conversely, ad_format=native within NG was ruled out with a lift of -0.01.",
-  "local_trace_path": "traces/1785624809_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/9a946fbdf28fed66c5299fcc5a2b6aa0"
+  "narrative": "The metric click-through rate (CTR) decreased by 0.000793 (moving from 0.011077 to 0.010284), driven primarily by decreases in fill rate (-23.15 revenue impact) and eCPM (-13.81 revenue impact). \n\nThe drop in CTR was concentrated in country=NG, which had an explanatory power of 0.152 and a high lift of 4.65. Within country=NG, the decline was further concentrated in ad_format=rewarded, which showed an explanatory power of 0.334 and a lift of 3.75, with its rate falling from 0.035073 to 0.02046. \n\nOther segments, such as ad_format=interstitial in the top-level check, were ruled out with an explanatory power of -0.036 and a lift of -0.21. Similarly, campaign_type=CPM showed broad, proportional movement with a lift of 0.96, ruling it out as a primary localized cause.",
+  "local_trace_path": "traces/1785626612_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/9307d34c829c12d3a4b683785764a9df"
 }

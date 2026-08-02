@@ -16,14 +16,14 @@
       "fills": 203905.0,
       "impressions": 199743.0,
       "clicks": 2182.0,
-      "revenue": 494.86817999999994
+      "revenue": 494.86818
     },
     "current_totals": {
       "requests": 265156.0,
       "fills": 208342.0,
       "impressions": 204019.0,
       "clicks": 2124.0,
-      "revenue": 492.13732600000014
+      "revenue": 492.13732600000003
     },
     "baseline_factors": {
       "requests": 259959.0,
@@ -1150,7 +1150,7 @@
       }
     }
   },
-  "narrative": "The click-through rate (ctr) decreased from 0.010924 to 0.010411. This drop was primarily driven by country=NG (lift 5.15, explanatory power 0.167), where the rate fell from 0.011697 to 0.00904. Within country=NG, the decline was further concentrated in category=news (lift 6.08, explanatory power 0.458), which saw its rate plunge from 0.024096 to 0.007937. By contrast, publisher_tier=tier_1 was checked and ruled out, showing minimal explanatory power of 0.059 and a low lift of 0.29.",
-  "local_trace_path": "traces/1785624805_investigate.json",
-  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/b9db0ff2c10fe1236f5a9b4b43f059d9"
+  "narrative": "The ctr metric experienced a downward movement, driven primarily by ecpm dropping -0.0264 relative delta and contributing -13.18 to the revenue delta of -2.73. \n\nWhen drilling down into ctr, the movement was heavily localized to country=NG with an explanatory power of 0.167 and a lift of 5.15. Other segments like country=DE were checked and ruled out with a lift of -3.69. \n\nDrilling deeper within country=NG, the drop was further concentrated in category=news, which showed an explanatory power of 0.458 and a high lift of 6.08, while segments like ad_format=native were ruled out with a lift of 0.54.",
+  "local_trace_path": "traces/1785626607_investigate.json",
+  "langfuse_trace_url": "https://cloud.langfuse.com/project/cmsa7vxeh0b00ad0i9q5t2zyk/traces/b981c24a7ae364483fd20299451edd9f"
 }

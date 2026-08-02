@@ -34,29 +34,26 @@ Each segment carries a `lift` value: lift = explanatory_power / volume_share, i.
 movement this segment explains than its size alone would predict. lift near 1 means the segment moved
 exactly in proportion to everyone else (not a distinct cause, just following a broad/uniform effect);
 lift well above 1 (the pipeline requires >= ~1.8 before calling a segment "primary") means it is
-genuinely disproportionate and localized. `primary_segment` (if not null) is the one segment per drill
-level that cleared that bar.
+genuinely disproportionate and localized. `primary_segments` (a list, possibly empty) holds every
+dimension per drill level that cleared that bar — usually one, but sometimes two independent dimensions
+(e.g. a device-driven cause and a separate geography-driven cause) each disproportionately explain part
+of the same movement. `deeper` is a list index-aligned with `primary_segments`: `deeper[i]` (if present)
+is that branch's own further drill-down within `primary_segments[i]`'s filter.
 
 Rules:
 - Cite only numbers that literally appear in the JSON. Never invent, estimate, or extrapolate a figure.
 - State the metric, the direction and size of the move, and which factor(s) drove it.
-- If a drill level's primary_segment is set, name that segment (e.g. "device_model=iPhone 13"), backed by
-  its lift and explanatory_power, and go one level deeper if `deeper` is present (e.g. "...within iPhone
-  13, further concentrated in region=NAM").
-- If primary_segment is null at a level, say plainly that the movement was broad-based / proportional
+- If a drill level's primary_segments is non-empty, name EVERY segment in it (e.g. "device_model=iPhone
+  13" and, separately, "country=DE" if both are present), each backed by its own lift and
+  explanatory_power, and go one level deeper within each one that has a corresponding `deeper` entry
+  (e.g. "...within iPhone 13, further concentrated in region=NAM"). Treat multiple entries as
+  independent, coexisting causes, not alternatives to pick between.
+- If primary_segments is empty at a level, say plainly that the movement was broad-based / proportional
   across segments at that level (cite one segment's lift near 1 as evidence), rather than forcing a cause.
 - Explicitly name at least one dimension or segment that was checked and ruled out, citing its number.
-- Plain language. No markdown headers, no bullet points. Under 150 words.
+- Plain language. No markdown headers, no bullet points. Under 150 words (if there are multiple
+  independent causes to cover, prioritize naming all of them over elaborating on any single one).
 """
-
-
-def _segment_chain(drill_down: dict) -> list[dict]:
-    chain = []
-    level = drill_down
-    while level and level.get("primary_segment"):
-        chain.append(level["primary_segment"])
-        level = level.get("deeper")
-    return chain
 
 
 def _fallback_narrative(payload: dict) -> str:
@@ -91,15 +88,16 @@ def _fallback_narrative(payload: dict) -> str:
             lines.append(f"LMDI decomposition attributes {pct_of_total:.0f}% of the "
                          f"revenue movement to {drill_factor.replace('_', ' ')}.")
 
-    chain = _segment_chain(drill)
-    if chain:
-        path = " -> ".join(f"{s['dimension']}={s['value']}" for s in chain)
-        last = chain[-1]
-        lines.append(
-            f"Drill-down localizes this to {path}, explaining "
-            f"{last['explanatory_power'] * 100:.0f}% of the movement at that level "
-            f"with a lift of {last['lift']:.1f}x over its size."
-        )
+    chains = attribution.segment_chains(drill)
+    if chains:
+        for chain in chains:
+            path = " -> ".join(f"{s['dimension']}={s['value']}" for s in chain)
+            last = chain[-1]
+            lines.append(
+                f"Drill-down localizes part of this to {path}, explaining "
+                f"{last['explanatory_power'] * 100:.0f}% of the movement at that level "
+                f"with a lift of {last['lift']:.1f}x over its size."
+            )
     else:
         lines.append(
             "Drill-down found no single segment disproportionately responsible -- "
